@@ -1,7 +1,6 @@
 {
   "name": "cutlist",
   "private": true,
-  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,5 +22,6 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.3"
-  }
+  },
+  "license": "AGPL-3.0-only"
 }

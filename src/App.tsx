@@ -505,7 +505,54 @@ export function App() {
           </>
         )}
       </main>
+
+      <footer className="bar colophon">
+        <span className="links">
+          <a href={`${REPO}/releases`}>{VERSION}</a>
+          <a href={`${REPO}/blob/main/LICENSE`}>AGPL-3.0</a>
+        </span>
+        <span>
+          Built by <Author /> in Australia <SouthernCross />
+        </span>
+        <span className="links loud">
+          <a href="https://github.com/sponsors/XDGFX">
+            <Glyph rows={HEART} /> Donate
+          </a>
+          <a href={REPO}>
+            <Glyph rows={CODE} /> Source
+          </a>
+        </span>
+      </footer>
     </div>
+  )
+}
+
+const REPO = 'https://github.com/XDGFX/cutlist'
+/** The latest release and any commits since, which the deploy workflow reads from the tags. */
+const VERSION: string = import.meta.env.VITE_VERSION || 'dev'
+
+const HEART = ['.##.##.', '#######', '#######', '.#####.', '..###..', '...#...']
+const CODE = ['..#...#..', '.#.....#.', '#.......#', '.#.....#.', '..#...#..']
+
+/** A picture drawn a pixel to each `#`. */
+function Glyph({ rows }: { rows: string[] }) {
+  return (
+    <svg className="glyph" viewBox={`0 0 ${rows[0].length} ${rows.length}`} width={rows[0].length} height={rows.length} aria-hidden="true">
+      {rows.flatMap((row, y) => [...row].map((dot, x) => dot === '#' && <rect key={`${x},${y}`} x={x} y={y} width="1" height="1" />))}
+    </svg>
+  )
+}
+
+/** The five stars as they sit on the flag, the fifth smaller than the rest. */
+function SouthernCross() {
+  return (
+    <svg className="glyph cross" viewBox="0 0 11 14" width="11" height="14" aria-hidden="true">
+      <rect x="5" y="0" width="2" height="2" />
+      <rect x="1" y="5" width="2" height="2" />
+      <rect x="8" y="3" width="2" height="2" />
+      <rect x="6" y="7" width="1" height="1" />
+      <rect x="5" y="12" width="2" height="2" />
+    </svg>
   )
 }
 
@@ -543,16 +590,40 @@ function flourish(n: number): { at: number; lit: number }[] {
   return on.map((place, i) => ({ at: place * step, lit: hold + (off[i] - place) * step }))
 }
 
-function Title() {
-  const [lit, setLit] = useState(() => [...TITLE].map(() => false))
+/** Which of `n` letters are lit, and a way to set a flourish off across them. */
+function useFlourish(n: number): [boolean[], () => void] {
+  const [lit, setLit] = useState(() => Array.from({ length: n }, () => false))
   // Every flourish flips its letters on and later off again, so overlapping flourishes cancel out.
   const flip = (i: number) => setLit((was) => was.map((on, j) => (j === i ? !on : on)))
-  const clicks = useRef<number[]>([])
-  const play = () => {
-    flourish(TITLE.length).forEach((timing, i) => {
+  const play = () =>
+    flourish(n).forEach((timing, i) => {
       setTimeout(flip, timing.at, i)
       setTimeout(flip, timing.at + timing.lit, i)
     })
+  return [lit, play]
+}
+
+const AUTHOR = 'XDGFX'
+
+/** The author's name, filled in, with a flourish that empties its letters under the pointer. */
+function Author() {
+  const [lit, play] = useFlourish(AUTHOR.length)
+  return (
+    <a className="by" href="https://github.com/XDGFX" aria-label={AUTHOR} onMouseEnter={play}>
+      {[...AUTHOR].map((letter, i) => (
+        <span key={i} aria-hidden className={lit[i] ? 'lit' : undefined}>
+          {letter}
+        </span>
+      ))}
+    </a>
+  )
+}
+
+function Title() {
+  const [lit, flourishTitle] = useFlourish(TITLE.length)
+  const clicks = useRef<number[]>([])
+  const play = () => {
+    flourishTitle()
     const now = performance.now()
     clicks.current = [...clicks.current.filter((at) => now - at < SPAM_WITHIN), now]
     if (clicks.current.length < SPAM_CLICKS) return
