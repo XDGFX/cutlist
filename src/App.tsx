@@ -1005,8 +1005,27 @@ function Pattern({ id, part, fill, unit }: { id: string; part: number; fill: Par
 }
 
 /** A hatched border just inside a part's edge, leaving the middle clear for its label. */
-function Band({ x, y, w, h, unit, stroke }: { x: number; y: number; w: number; h: number; unit: number; stroke: string }) {
-  const band = Math.min(unit / 65, w / 4, h / 4)
+function Band({
+  x,
+  y,
+  w,
+  h,
+  unit,
+  stroke,
+  bare,
+}: {
+  x: number
+  y: number
+  w: number
+  h: number
+  unit: number
+  stroke: string
+  bare: boolean
+}) {
+  const full = unit / 65
+  const short = Math.min(w, h)
+  // A narrow part with no label inside is hatched right across, as its middle would be a sliver.
+  const band = bare && short < full * 3 ? short / 2 : Math.min(full, short / 4)
   return (
     <rect
       className="band"
@@ -1204,7 +1223,7 @@ function Sheet({
           </g>
         ))}
         {layout.placements.map((p, i) => {
-          // A part too small for its label is too small for a fill to tell it apart.
+          // A part too small for its label is too small for a motif to tell it apart.
           const bare = !detail && plan.small.has(i)
           return (
             <g key={`p${i}`}>
@@ -1217,8 +1236,8 @@ function Sheet({
                 height={p.h}
                 style={fill === 'mono' && !bare ? { fill: pattern(id, p.partId) } : undefined}
               />
-              {fill === 'colour' && !bare && (
-                <Band x={p.x} y={p.y} w={p.w} h={p.h} unit={unit} stroke={pattern(id, p.partId)} />
+              {fill === 'colour' && (
+                <Band x={p.x} y={p.y} w={p.w} h={p.h} unit={unit} stroke={pattern(id, p.partId)} bare={bare} />
               )}
               {!bare && (!grouped.has(i) || apart.has(i)) && label(partLabel(p, named), p, 'part-label')}
             </g>
