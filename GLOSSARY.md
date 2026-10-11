@@ -19,6 +19,15 @@
 - **Remainder**: a part size that no cut sets directly, because it is whatever is left between
   other cuts. Cutting errors add up on it. A layout's remainders are counted as its stacked sizes.
 - **Layout**: the parts placed on one stock sheet.
+- **Label**: a part's name and size written on it in a layout, at the size of the sheet's heading.
+- **Run**: the same small part repeated side by side or end to end in a layout. It takes one label
+  for the lot, such as "5 × Block".
+- **Leader**: a line from a part too small to hold its label out to the label in the margin below
+  or above the sheet. Identical parts share one label.
+- **Detail**: an enlarged view of a crowded region of a layout, drawn below the sheet at a scale
+  where each part in it holds its label. Its region is the whole piece the crowd is cut from once
+  the cuts before it are made, where that is small enough to enlarge.
+- **Arm**: the dashed line from a detail's region on the sheet to the detail.
 - **Offcut**: a leftover rectangle large enough to be worth keeping. Smaller leftovers are waste.
 - **Solution**: one set of layouts that answers a job, with any parts it could not place.
 - **Candidate**: one of the alternative solutions offered for the same job.

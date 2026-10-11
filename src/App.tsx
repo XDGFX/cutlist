@@ -8,6 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react'
+import { clip, dims, fit, labelRoom, mm, partLabel, planLabels, type Detail } from './labels'
 import {
   EFFORTS,
   optimise,
@@ -15,6 +16,7 @@ import {
   type Job,
   type Layout,
   type Part,
+  type Rect,
   type SearchStats,
   type Solution,
   type StockSheet,
@@ -36,7 +38,6 @@ import {
   type Saved,
 } from './storage'
 
-const mm = (n: number) => String(+n.toFixed(1))
 const count = (n: number) => n.toLocaleString('en-GB')
 const duration = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`)
 const total = (items: { qty: number }[]) => items.reduce((n, i) => n + i.qty, 0)
@@ -327,6 +328,23 @@ export function App() {
     pick(to)
     e.currentTarget.querySelectorAll('input')[to]?.focus()
   }
+  const chosen = solution ? solutions.indexOf(solution) : 0
+  /** Moves to the next or previous candidate, going round at the ends. */
+  const step = (by: number) => pick((chosen + by + solutions.length) % solutions.length)
+  // The arrow keys step through the candidates from anywhere, unless a field is using them. Inside
+  // the radio group they are the group's own.
+  useEffect(() => {
+    if (solutions.length < 2) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      if (document.querySelector('dialog[open]')) return
+      if (e.target instanceof Element && e.target.closest('input, select, textarea, [contenteditable]')) return
+      if (e.key === 'ArrowLeft') step(-1)
+      if (e.key === 'ArrowRight') step(1)
+    }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [chosen, solutions.length])
 
   const removeRun = (id: string) => {
     const next = neighbour(
@@ -607,7 +625,7 @@ export function App() {
             <dt><CalculateKeys /></dt>
             <dd>Calculate</dd>
             <dt>← →</dt>
-            <dd>Previous or next candidate, from the candidates</dd>
+            <dd>Previous or next candidate</dd>
             <dt>Home End</dt>
             <dd>First or last candidate, from the candidates</dd>
             <dt>↑ ↓</dt>
@@ -673,23 +691,35 @@ export function App() {
         {run && solution && (
           <>
             <div className="bar chosen">
-              {/* Radios, so that the arrow keys choose a candidate and the group is a single tab stop. */}
-              <div className="letters" role="radiogroup" aria-label="Candidates" onKeyDown={onCandidateKey}>
-                {solutions.map((s, i) => {
-                  const letter = String.fromCharCode(65 + i)
-                  return (
-                    <label key={i} title={`${figures(s)}, ${moves(s)}. ${s.strategy}`}>
-                      <input
-                        type="radio"
-                        name="candidate"
-                        aria-label={`${letter}: ${figures(s)}, ${moves(s)}`}
-                        checked={s === solution}
-                        onChange={() => pick(i)}
-                      />
-                      <span>{letter}</span>
-                    </label>
-                  )
-                })}
+              <div className="candidates">
+                {solutions.length > 1 && (
+                  <button title="Previous candidate (left arrow key)" aria-label="Previous candidate" onClick={() => step(-1)}>
+                    ←
+                  </button>
+                )}
+                {/* Radios, so that the arrow keys choose a candidate and the group is a single tab stop. */}
+                <div className="letters" role="radiogroup" aria-label="Candidates" onKeyDown={onCandidateKey}>
+                  {solutions.map((s, i) => {
+                    const letter = String.fromCharCode(65 + i)
+                    return (
+                      <label key={i} title={`${figures(s)}, ${moves(s)}. ${s.strategy}`}>
+                        <input
+                          type="radio"
+                          name="candidate"
+                          aria-label={`${letter}: ${figures(s)}, ${moves(s)}`}
+                          checked={s === solution}
+                          onChange={() => pick(i)}
+                        />
+                        <span>{letter}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                {solutions.length > 1 && (
+                  <button title="Next candidate (right arrow key)" aria-label="Next candidate" onClick={() => step(1)}>
+                    →
+                  </button>
+                )}
               </div>
               <span>{figures(solution)}</span>
               <span>{moves(solution)}</span>
@@ -938,10 +968,14 @@ function Fence({ cut, x, y, kerf, size }: { cut: Cut; x: number; y: number; kerf
   )
 }
 
-/** How many mono motif tiles fit along a sheet's length. */
+/** The size of a sheet's heading in pixels, which the labels on the sheet match. */
+const HEADING = parseFloat(getComputedStyle(document.documentElement).fontSize) * 1.05
+
+/** The width in pixels that fills are sized against, and how many mono motif tiles fit along it. */
+const PATTERN = 900
 const TILES = 45
 
-/** The fill for one part, sized against the sheet's length so it looks the same on any stock. */
+/** The fill for one part, sized against `unit` so it looks the same however large a sheet is drawn. */
 function Pattern({ id, part, fill, unit }: { id: string; part: number; fill: PartFill; unit: number }) {
   if (fill === 'mono') {
     const [side, draw] = MOTIFS[part % MOTIFS.length]
@@ -993,6 +1027,23 @@ function Sheet({
   fill: PartFill
   kerf: number
 }) {
+  const svg = useRef<SVGSVGElement>(null)
+  // Sheet millimetres per screen pixel, so that text on a sheet is sized in pixels however large
+  // the sheet is drawn.
+  const [px, setPx] = useState(layout.length / 900)
+  const measure = () => {
+    const box = svg.current?.getBoundingClientRect()
+    const view = svg.current?.viewBox.baseVal
+    if (!box?.width || !box.height || !view) return
+    const next = Math.max(view.width / box.width, view.height / box.height)
+    setPx((was) => (Math.abs(next - was) / was > 0.005 ? next : was))
+  }
+  useLayoutEffect(measure)
+  useEffect(() => {
+    const watch = new ResizeObserver(measure)
+    watch.observe(svg.current!)
+    return () => watch.disconnect()
+  }, [])
   // The cut whose fence distance shows on screen; print shows them all.
   const [hot, setHot] = useState<number | null>(null)
   const heat = (i: number) => ({
@@ -1030,12 +1081,48 @@ function Sheet({
   }, [])
   // Runs saved before the cutting order existed have none.
   const sequence = layout.sequence ?? []
-  const badge = layout.length / 85
-  const maxFont = layout.length / 60
-  const minFont = layout.length / 120
   const used = layout.placements.reduce((a, p) => a + p.w * p.h, 0)
-  const tile = layout.length / TILES
-  const pattern = (partId: string) => `url(#fill-${index}-${partIds.indexOf(partId)})`
+  const font = HEADING * px
+  const plan = useMemo(() => planLabels(layout, px, HEADING, kerf), [layout, px, kerf])
+  const grouped = new Set(plan.runs.flatMap((r) => r.parts))
+  const covers = (r: Rect, inner: Rect) => {
+    const shared = clip(r, inner)
+    return shared !== null && shared.w === inner.w && shared.h === inner.h
+  }
+  /** Where a cut's badge and fence arrow go, along the stretch of it that `view` shows. */
+  const badgeBox = (x: number, y: number, badge: number) => ({ x: x - badge * 1.4, y: y - badge, w: badge * 2.8, h: badge * 2 })
+  const mark = (c: Cut, i: number, badge: number, view?: Rect, taken: Rect[] = []) => {
+    const [x1, y1, x2, y2] = view
+      ? [Math.max(c.x1, view.x), Math.max(c.y1, view.y), Math.min(c.x2, view.x + view.w), Math.min(c.y2, view.y + view.h)]
+      : [c.x1, c.y1, c.x2, c.y2]
+    const length = x2 - x1 + y2 - y1 || 1
+    const at = (t: number) => [x1 + (x2 - x1) * t, y1 + (y2 - y1) * t]
+    // Staggered so that badges on neighbouring cuts do not pile up, and kept towards one
+    // end of the cut, away from the part labels in the middle. One that would cover a label
+    // or another badge slides along its cut to the first clear spot.
+    const wanted = 0.12 + 0.3 * ((i * 0.618) % 1)
+    const clear = (t: number) => !taken.some((r) => clip(badgeBox(...(at(t) as [number, number]), badge), r))
+    const along = [wanted, 0.08, 0.92, 0.2, 0.8, 0.32, 0.68, 0.5].find(clear) ?? wanted
+    const [x, y] = at(along)
+    // The fence arrow sits just past the badge so the two do not cover each other.
+    const [fx, fy] = at(along + Math.min(2.4 * badge, length * 0.2) / length)
+    return { x, y, fx, fy }
+  }
+  // The view each cut is numbered in: the sheet, or the detail its badge would land in, where
+  // there is room for it.
+  const home = sequence.map((c, i) => {
+    const badge = font * 0.7
+    const { x, y } = mark(c, i, badge)
+    // A cut along the edge of a detail's piece is made before the piece exists, so it stays on the sheet.
+    const edges = (d: Detail) =>
+      c.rip
+        ? c.y1 <= d.piece.y || c.y1 >= d.piece.y + d.piece.h
+        : c.x1 <= d.piece.x || c.x1 >= d.piece.x + d.piece.w
+    return plan.details.find((d) => !edges(d) && clip(badgeBox(x, y, badge), d.region))?.letter ?? ''
+  })
+  const gutter = plan.gutter.top + plan.gutter.bottom
+  const tile = (PATTERN * px) / TILES
+  const pattern = (view: string, partId: string) => `url(#fill-${index}${view}-${partIds.indexOf(partId)})`
 
   const key = new Map<string, { partId: string; name: string; count: number }>()
   for (const p of layout.placements) {
@@ -1044,31 +1131,126 @@ function Sheet({
     key.set(p.partId, entry)
   }
 
-  const label = (wanted: string[], x: number, y: number, w: number, h: number, className: string) => {
-    const sizeOf = (lines: string[], across: number, down: number) =>
-      Math.min(
-        maxFont,
-        (across * 0.92) / (Math.max(...lines.map((l) => l.length)) * 0.6),
-        (down * 0.8) / (lines.length * 1.2),
-      )
-    // Narrow pieces get everything on one line, and tall ones get the text turned to run up them.
-    const [size, lines, turned] = [wanted, [wanted.join(' ')]]
-      .flatMap((ls) => [
-        [sizeOf(ls, w, h), ls, false] as const,
-        [sizeOf(ls, h, w), ls, true] as const,
-      ])
-      .reduce((best, option) => (option[0] > best[0] ? option : best))
-    if (size < minFont) return null
-    const [cx, cy] = [x + w / 2, y + h / 2]
-    const top = cy - ((lines.length - 1) * size * 1.2) / 2
+  /** The sheet as seen through `view`, with text and fills sized for `px` millimetres to the pixel. */
+  const scene = (id: string, view: Rect, px: number, detail: boolean) => {
+    const font = HEADING * px
+    // Cut badges match the body text.
+    const badge = font * 0.7
+    const unit = PATTERN * px
+    // What a cut's badge must keep off: on the sheet the regions shown in details, then every label.
+    const taken: Rect[] = detail
+      ? []
+      : plan.details.flatMap((d) => [
+          d.region,
+          ...d.arm.slice(1).map((p, n) => {
+            const from = d.arm[n]
+            return {
+              x: Math.min(from.x, p.x) - font * 0.3,
+              y: Math.min(from.y, p.y) - font * 0.3,
+              w: Math.abs(p.x - from.x) + font * 0.6,
+              h: Math.abs(p.y - from.y) + font * 0.6,
+            }
+          }),
+        ])
+    const label = (wanted: string[], r: Rect, className: string, plate = false) => {
+      const box = clip(r, view)
+      const setting = box && fit(wanted, box, font)
+      if (!setting) return null
+      const [x, y] = [box.x + box.w / 2, box.y + box.h / 2]
+      taken.push({ x: x - setting.w / 2, y: y - setting.h / 2, w: setting.w, h: setting.h })
+      return <Label {...setting} x={x} y={y} font={font} className={className} plate={plate} />
+    }
+    // One label across a run of the same part, wherever all of the run shows and holds it.
+    const across = plan.runs.map(
+      (r, n) => covers(view, r.box) && <g key={`r${n}`}>{label(r.label, labelRoom(r, font), 'part-label', true)}</g>,
+    )
     return (
-      <g transform={turned ? `rotate(-90 ${cx} ${cy})` : undefined}>
-        {lines.map((line, i) => (
-          <text key={i} className={className} x={cx} y={top + i * size * 1.2} fontSize={size} strokeWidth={size * 0.3}>
-            {line}
-          </text>
+      <>
+        {fill !== 'none' && (
+          <defs>
+            {[...key.keys()].map((partId) => (
+              <Pattern
+                key={partId}
+                id={`fill-${index}${id}-${partIds.indexOf(partId)}`}
+                part={partIds.indexOf(partId)}
+                fill={fill}
+                unit={unit}
+              />
+            ))}
+          </defs>
+        )}
+        <rect className="board" width={layout.length} height={layout.width} />
+        {layout.offcuts.map((o, i) => (
+          <g key={`o${i}`}>
+            <title>{`Offcut: ${dims(o)}`}</title>
+            <rect className="offcut" x={o.x} y={o.y} width={o.w} height={o.h} />
+            {(detail || !plan.details.some((d) => covers(d.region, o))) && label([dims(o)], o, 'offcut-label')}
+          </g>
         ))}
-      </g>
+        {layout.placements.map((p, i) => {
+          // A part too small for its label is too small for a fill to tell it apart.
+          const bare = !detail && plan.small.has(i)
+          return (
+            <g key={`p${i}`}>
+              <title>{`${p.name}: ${dims(p)}`}</title>
+              <rect
+                className="part"
+                x={p.x}
+                y={p.y}
+                width={p.w}
+                height={p.h}
+                style={fill === 'mono' && !bare ? { fill: pattern(id, p.partId) } : undefined}
+              />
+              {fill === 'colour' && !bare && (
+                <Band x={p.x} y={p.y} w={p.w} h={p.h} unit={unit} stroke={pattern(id, p.partId)} />
+              )}
+              {!bare && !grouped.has(i) && label(partLabel(p), p, 'part-label')}
+            </g>
+          )
+        })}
+        {sequence.map((c, i) => {
+          if (detail && !clip({ x: c.x1 - 1, y: c.y1 - 1, w: c.x2 - c.x1 + 2, h: c.y2 - c.y1 + 2 }, view)) return null
+          const numbered = showCuts && home[i] === id
+          const { x, y, fx, fy } = mark(c, i, badge, detail ? view : undefined, numbered ? taken : [])
+          if (numbered) taken.push(badgeBox(x, y, badge))
+          return (
+            <g
+              key={`c${i}`}
+              className={`cut${c.remainder.length ? ' stacked' : ''}${hot === i ? ' hot' : ''}`}
+              {...heat(i)}
+            >
+              <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} />
+              <Fence cut={c} x={fx} y={fy} kerf={kerf} size={badge} />
+              {numbered && (
+                <>
+                  {/* A heavy stroke out of both sides of the badge, to show which way its cut runs. */}
+                  {c.rip ? (
+                    <line
+                      className="way"
+                      x1={Math.max(c.x1, x - badge * (1.6 + 0.4 * String(i + 1).length))}
+                      y1={y}
+                      x2={Math.min(c.x2, x + badge * (1.6 + 0.4 * String(i + 1).length))}
+                      y2={y}
+                    />
+                  ) : (
+                    <line className="way" x1={x} y1={Math.max(c.y1, y - badge * 2.1)} x2={x} y2={Math.min(c.y2, y + badge * 2.1)} />
+                  )}
+                  <rect
+                    x={x - badge * (0.5 + 0.4 * String(i + 1).length)}
+                    y={y - badge}
+                    width={badge * (1 + 0.8 * String(i + 1).length)}
+                    height={badge * 2}
+                  />
+                  <text x={x} y={y} fontSize={badge * 1.2}>
+                    {i + 1}
+                  </text>
+                </>
+              )}
+            </g>
+          )
+        })}
+        {across}
+      </>
     )
   }
 
@@ -1082,7 +1264,10 @@ function Sheet({
         <span>{((used / (layout.length * layout.width)) * 100).toFixed(0)}% used</span>
       </figcaption>
       <svg
-        viewBox={`0 0 ${layout.length} ${layout.width}`}
+        ref={svg}
+        viewBox={`0 ${-plan.gutter.top} ${layout.length} ${layout.width + gutter}`}
+        // The margin is extra to the height a sheet may take, so that labels there do not shrink it.
+        style={{ maxHeight: `calc(75vh + ${gutter / px}px)` }}
         role="img"
         aria-label={`Layout of sheet ${index + 1}`}
         className={fill}
@@ -1097,82 +1282,64 @@ function Sheet({
         }}
         onPointerLeave={() => setPointer(null)}
       >
-        {fill !== 'none' && (
-          <defs>
-            {[...key.keys()].map((partId) => (
-              <Pattern
-                key={partId}
-                id={`fill-${index}-${partIds.indexOf(partId)}`}
-                part={partIds.indexOf(partId)}
-                fill={fill}
-                unit={layout.length}
-              />
-            ))}
-          </defs>
-        )}
-        <rect className="board" width={layout.length} height={layout.width} />
-        {layout.offcuts.map((o, i) => (
-          <g key={`o${i}`}>
-            <title>{`Offcut: ${mm(o.w)} × ${mm(o.h)}`}</title>
-            <rect className="offcut" x={o.x} y={o.y} width={o.w} height={o.h} />
-            {label([`${mm(o.w)} × ${mm(o.h)}`], o.x, o.y, o.w, o.h, 'offcut-label')}
-          </g>
-        ))}
-        {layout.placements.map((p, i) => (
-          <g key={`p${i}`}>
-            <title>{`${p.name}: ${mm(p.w)} × ${mm(p.h)}`}</title>
-            <rect
-              className="part"
-              x={p.x}
-              y={p.y}
-              width={p.w}
-              height={p.h}
-              style={fill === 'mono' ? { fill: pattern(p.partId) } : undefined}
-            />
-            {fill === 'colour' && <Band x={p.x} y={p.y} w={p.w} h={p.h} unit={layout.length} stroke={pattern(p.partId)} />}
-            {label([p.name, `${mm(p.w)} × ${mm(p.h)}`], p.x, p.y, p.w, p.h, 'part-label')}
-          </g>
-        ))}
-        {sequence.map((c, i) => {
-            const length = c.x2 - c.x1 + c.y2 - c.y1
-            const at = (t: number) => [c.x1 + (c.x2 - c.x1) * t, c.y1 + (c.y2 - c.y1) * t]
-            // Staggered so that badges on neighbouring cuts do not pile up, and kept towards one
-            // end of the cut, away from the part labels in the middle.
-            const along = 0.12 + 0.3 * ((i * 0.618) % 1)
-            const [x, y] = at(along)
-            // The fence arrow sits just past the badge so the two do not cover each other.
-            const [fx, fy] = at(along + Math.min(2.4 * badge, length * 0.2) / length)
-            return (
-              <g
-                key={`c${i}`}
-                className={`cut${c.remainder.length ? ' stacked' : ''}${hot === i ? ' hot' : ''}`}
-                {...heat(i)}
-              >
-                <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} />
-                <Fence cut={c} x={fx} y={fy} kerf={kerf} size={badge} />
-                {showCuts && (
-                  <>
-                    <rect
-                      x={x - badge * (0.5 + 0.4 * String(i + 1).length)}
-                      y={y - badge}
-                      width={badge * (1 + 0.8 * String(i + 1).length)}
-                      height={badge * 2}
-                    />
-                    <text x={x} y={y} fontSize={badge * 1.2}>
-                      {i + 1}
-                    </text>
-                  </>
-                )}
+        {scene('', { x: 0, y: 0, w: layout.length, h: layout.width }, px, false)}
+        {plan.leaders.map((l) => (
+          <g key={`${l.y}`} className="leader">
+            {l.points.map((m, n) => (
+              <g key={n}>
+                <line x1={m.x} y1={m.y} x2={m.x} y2={l.y} />
+                <circle cx={m.x} cy={m.y} r={font * 0.17} />
               </g>
-            )
-          })}
+            ))}
+            <line x1={l.from} y1={l.y} x2={l.to} y2={l.y} />
+            <Label lines={[l.text]} x={l.textX} y={l.y} font={font} className="part-label" anchor={l.anchor} />
+          </g>
+        ))}
+        {plan.details.map((d) => {
+          const zoom = px / d.px
+          return (
+            <g key={d.letter} className="detail">
+              <rect className="frame" x={d.region.x} y={d.region.y} width={d.region.w} height={d.region.h} />
+              <polyline className="frame" points={d.arm.map((p) => `${p.x},${p.y}`).join(' ')} />
+              <rect className="tab" x={d.tab.x} y={d.tab.y} width={d.tab.w} height={d.tab.h} />
+              <Label
+                lines={[d.title]}
+                x={d.tab.x + font * 0.5}
+                y={d.tab.y + d.tab.h / 2}
+                font={font}
+                className="tab-label"
+                anchor="start"
+              />
+              <clipPath id={`detail-${index}${d.letter}`}>
+                <rect x={d.frame.x} y={d.frame.y} width={d.frame.w} height={d.frame.h} />
+              </clipPath>
+              <g clipPath={`url(#detail-${index}${d.letter})`}>
+                <g transform={`translate(${d.frame.x} ${d.frame.y}) scale(${zoom}) translate(${-d.region.x} ${-d.region.y})`}>
+                  {scene(d.letter, d.region, d.px, true)}
+                </g>
+              </g>
+              <rect className="frame" x={d.frame.x} y={d.frame.y} width={d.frame.w} height={d.frame.h} />
+            </g>
+          )
+        })}
+        {/* Last, so that no other detail's frame or arm covers a region's letter. */}
+        {plan.details.map((d) => {
+          const x = Math.min(Math.max(d.region.x, font * 0.7), layout.length - font * 0.7)
+          const y = Math.min(Math.max(d.region.y, font * 0.7), layout.width - font * 0.7)
+          return (
+            <g key={d.letter}>
+              <rect className="tab" x={x - font * 0.7} y={y - font * 0.7} width={font * 1.4} height={font * 1.4} />
+              <Label lines={[d.letter]} x={x} y={y} font={font} className="tab-label" />
+            </g>
+          )
+        })}
       </svg>
       <ul className="key">
         {[...key.values()].map((k) => (
           <li key={k.partId}>
             {fill !== 'none' && (
               <svg className="swatch" viewBox={`0 0 ${tile * 2.4} ${tile * 1.5}`} aria-hidden="true">
-                <rect width={tile * 2.4} height={tile * 1.5} style={{ fill: pattern(k.partId) }} />
+                <rect width={tile * 2.4} height={tile * 1.5} style={{ fill: pattern('', k.partId) }} />
               </svg>
             )}
             {k.count} × {k.name}
@@ -1209,5 +1376,48 @@ function Sheet({
         </details>
       )}
     </figure>
+  )
+}
+
+/** A label centred on a point, or starting or ending there when anchored. */
+function Label({
+  lines,
+  turned,
+  x,
+  y,
+  font,
+  className,
+  anchor,
+  plate,
+}: {
+  lines: string[]
+  turned?: boolean
+  /** A blank ground behind the text, for a label that lies over lines. */
+  plate?: boolean
+  x: number
+  y: number
+  font: number
+  className: string
+  anchor?: 'start' | 'end'
+}) {
+  const top = y - ((lines.length - 1) * font * 1.2) / 2
+  const [wide, tall] = [(Math.max(...lines.map((l) => l.length)) * 0.6 + 0.4) * font, lines.length * font * 1.2]
+  return (
+    <g transform={turned ? `rotate(-90 ${x} ${y})` : undefined}>
+      {plate && <rect className="plate" x={x - wide / 2} y={y - tall / 2} width={wide} height={tall} />}
+      {lines.map((line, i) => (
+        <text
+          key={i}
+          className={className}
+          x={x}
+          y={top + i * font * 1.2}
+          fontSize={font}
+          strokeWidth={font * 0.3}
+          style={anchor && { textAnchor: anchor }}
+        >
+          {line}
+        </text>
+      ))}
+    </g>
   )
 }

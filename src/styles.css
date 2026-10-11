@@ -661,9 +661,22 @@ select:focus-visible {
 }
 
 /* The candidates by letter, the chosen one inverted, beside the chosen one's figures. */
+.candidates,
 .letters {
   display: flex;
   gap: 0.15rem;
+}
+
+/* The arrows either side of the letters, which step round the candidates. */
+.candidates > button {
+  min-width: 1.6em;
+  padding: 0.15em 0;
+  color: var(--ink);
+  font: inherit;
+}
+
+.candidates > button:hover {
+  background: var(--offcut);
 }
 
 .letters label {
@@ -868,8 +881,53 @@ text {
   paint-order: stroke;
 }
 
+/* A label across a run lies over the cuts between its parts, on a blank ground of its own. */
+.plate {
+  fill: var(--bg);
+}
+
+.plate,
+.plate ~ text {
+  pointer-events: none;
+}
+
 .offcut-label {
   fill: var(--muted);
+}
+
+/* Text in the margin has no pattern behind it to stand out from. */
+.leader > g > .part-label,
+.detail > g > .part-label {
+  stroke: none;
+}
+
+.leader line {
+  stroke: var(--ink);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.leader circle {
+  fill: var(--ink);
+}
+
+/* A detail's region, frame and arm are heavier than any edge on the sheet, so they read as marks
+   on the drawing and not part of it. */
+.frame {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-dasharray: 7 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.tab {
+  fill: var(--ink);
+}
+
+.tab-label {
+  fill: var(--bg);
+  stroke: none;
 }
 
 .key {
@@ -956,6 +1014,10 @@ text {
 
 .cut.hot > line {
   stroke-width: 2.5;
+}
+
+.cut > line.way {
+  stroke-width: 4;
 }
 
 .cut.hot > rect {
@@ -1063,11 +1125,21 @@ text {
   .colophon,
   .inputs,
   .letters label:not(:has(:checked)),
+  .candidates > button,
   .notice:not(.warn) {
     display: none;
   }
 
   .fence {
     display: inline;
+  }
+
+  /* A sheet with a detail is too tall to keep on one page with its cutting order. */
+  .sheet:has(.detail) {
+    break-inside: auto;
+  }
+
+  .sheet figcaption {
+    break-after: avoid;
   }
 }
