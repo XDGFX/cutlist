@@ -3,8 +3,6 @@
   --ink: #000;
   --muted: #757575;
   --faint: #b1b1b1;
-  --cut: #eb1d25;
-  --cut-ink: #fff;
   --offcut: #f3f3f3;
   --mono: 'DM Mono', ui-monospace, Menlo, monospace;
   --sans: 'Familjen Grotesk Variable', Arial, sans-serif;
@@ -17,8 +15,6 @@
     --ink: #fff;
     --muted: #949494;
     --faint: #555;
-    --cut: #ff4d4d;
-    --cut-ink: #000;
     --offcut: #1c1c1c;
   }
 }
@@ -411,7 +407,7 @@ dd {
 }
 
 .notice.warn {
-  color: var(--cut);
+  font-weight: 600;
 }
 
 .sheet {
@@ -494,14 +490,14 @@ text {
 }
 
 .cut line {
-  stroke: var(--cut);
+  stroke: var(--ink);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .cut rect {
   fill: var(--bg);
-  stroke: var(--cut);
+  stroke: var(--ink);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
@@ -512,11 +508,11 @@ text {
 }
 
 .cut.stacked rect {
-  fill: var(--cut);
+  fill: var(--ink);
 }
 
 .cut.stacked text {
-  fill: var(--cut-ink);
+  fill: var(--bg);
 }
 
 .cut .fence line {
@@ -575,7 +571,7 @@ text {
 }
 
 .sequence li.stacked {
-  color: var(--cut);
+  font-weight: 600;
 }
 
 @media (max-width: 800px) {
@@ -605,8 +601,6 @@ text {
     --ink: #000;
     --muted: #444;
     --faint: #999;
-    --cut: #eb1d25;
-    --cut-ink: #fff;
     --offcut: #fff;
   }
 
