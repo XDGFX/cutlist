@@ -50,9 +50,9 @@
   <rect class="bg" width="1280" height="420"/>
 
   <!-- Wordmark -->
-  <use class="ink" href="#word" x="80" y="200"/>
-  <use class="muted" href="#tag1" x="86" y="246"/>
-  <use class="muted" href="#tag2" x="86" y="268"/>
+  <use class="ink" href="#word" x="80" y="252"/>
+  <use class="muted" href="#tag1" x="86" y="298"/>
+  <use class="muted" href="#tag2" x="86" y="320"/>
 
   <!-- Stock sheet, 2440 × 1220 mm at 0.2 px/mm -->
   <g transform="translate(712 78)">
