@@ -1,6 +1,6 @@
 import { createSearch, type Job, type SearchStats, type Solution } from './optimiser'
 
-export type SearchRequest = { type: 'start'; job: Job; effort: number } | { type: 'stop' }
+export type SearchRequest = { type: 'start'; job: Job; effort: number; safe: boolean } | { type: 'stop' }
 export type Update = { type: 'progress' | 'done'; stats: SearchStats; solutions: Solution[] }
 
 /** How long to search between progress updates, in milliseconds. */
@@ -13,7 +13,7 @@ self.onmessage = async ({ data }: MessageEvent<SearchRequest>) => {
     stopped = true
     return
   }
-  const search = createSearch(data.job, data.effort)
+  const search = createSearch(data.job, data.effort, data.safe)
   while (!search.finished() && !stopped) {
     const until = performance.now() + SLICE
     while (!search.finished() && performance.now() < until) search.step(32)

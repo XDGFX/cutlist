@@ -143,10 +143,50 @@ describe('optimise', () => {
     // By hand: both 1219 strips as columns at one end, everything else in a 200 deep row.
     const byHand = (2440 - 2 * (110 + strips.kerf)) * (1220 - 200 - strips.kerf)
 
-    const [best] = optimise(strips)
+    const [best] = optimise(strips, 0, false)
     expect(best.stats).toMatchObject({ sheets: 1, unplaced: 0 })
     const [largest] = best.layouts[0].offcuts
     expect(largest.w * largest.h).toBeGreaterThanOrEqual(byHand)
+  })
+
+  describe('cutting order', () => {
+    // Two rips stacked across the width, with 100 spare beyond them.
+    const stack: Job = {
+      kerf: 0,
+      stock: [sheet({ length: 1000, width: 600 })],
+      parts: [part({ length: 1000, width: 250, qty: 2, canRotate: false })],
+    }
+
+    it('sizes each part off an edge and frees the leftover last', () => {
+      const [solution] = optimise(stack)
+      expect(solution.stats.stacked).toBe(0)
+      expect(solution.layouts[0].sequence).toMatchObject([
+        { rip: true, fence: 250, far: false, sizes: ['part'], remainder: [] },
+        { rip: true, fence: 250, far: false, sizes: ['part'], remainder: [] },
+      ])
+      expect(solution.layouts[0].offcuts).toEqual([{ x: 0, y: 500, w: 1000, h: 100 }])
+    })
+
+    it('counts a part left between other cuts when the leftover is freed first', () => {
+      const [solution] = optimise(stack, 0, false)
+      const [first, second] = solution.layouts[0].sequence
+      expect(first).toMatchObject({ fence: 500, sizes: [] })
+      expect(second.remainder).toEqual(['part'])
+      expect(solution.stats.stacked).toBe(1)
+    })
+
+    it('counts a remainder that no order can avoid', () => {
+      const exact: Job = { ...stack, stock: [sheet({ length: 1000, width: 500 })] }
+      expect(optimise(exact)[0].stats.stacked).toBe(1)
+    })
+
+    it('prefers a layout with no remainders to one with a larger offcut', () => {
+      const safe = optimise(cabinet)
+      const loose = optimise(cabinet, 0, false)
+      expect(loose[0].stats.stacked).toBeGreaterThan(0)
+      expect(safe[0].stats.stacked).toBe(0)
+      expect(safe[0].stats.sheets).toBe(loose[0].stats.sheets)
+    })
   })
 
   it('gives the same solutions every time for the same job', () => {
