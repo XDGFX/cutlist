@@ -35,6 +35,9 @@ const watch = (notify: () => void) => {
   return () => void watching.delete(notify)
 }
 
+/** Highlighter fills for parts, light enough for black labels and clear of the red kept for cuts. */
+const INKS = ['#fff04d', '#6fe3ff', '#b9a6ff', '#7dfc9a', '#ffa8e0', '#8ab4ff', '#c6f24a', '#ffc27a']
+
 /** How long the inputs must rest before the URL is rewritten, in milliseconds. */
 const URL_DELAY = 300
 
@@ -562,7 +565,12 @@ function Sheet({
   const maxFont = layout.length / 45
   const minFont = layout.length / 170
   const used = layout.placements.reduce((a, p) => a + p.w * p.h, 0)
-  const colour = (partId: string) => `hsl(${(partIds.indexOf(partId) * 137.5 + 28) % 360} 60% 74%)`
+  const colour = (partId: string) => {
+    const i = partIds.indexOf(partId)
+    const ink = INKS[i % INKS.length]
+    // A job with more parts than inks goes round again in paler tints.
+    return i < INKS.length ? ink : `color-mix(in srgb, ${ink} 45%, #fff)`
+  }
 
   const key = new Map<string, { partId: string; name: string; size: string; count: number }>()
   for (const p of layout.placements) {
@@ -654,7 +662,12 @@ function Sheet({
                 {showFences && <Fence cut={c} x={fx} y={fy} kerf={kerf} size={badge} />}
                 {showCuts && (
                   <>
-                    <circle cx={x} cy={y} r={badge} />
+                    <rect
+                      x={x - badge * (0.5 + 0.4 * String(i + 1).length)}
+                      y={y - badge}
+                      width={badge * (1 + 0.8 * String(i + 1).length)}
+                      height={badge * 2}
+                    />
                     <text x={x} y={y} fontSize={badge * 1.2}>
                       {i + 1}
                     </text>

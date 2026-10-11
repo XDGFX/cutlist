@@ -499,7 +499,7 @@ text {
   vector-effect: non-scaling-stroke;
 }
 
-.cut circle {
+.cut rect {
   fill: var(--bg);
   stroke: var(--cut);
   stroke-width: 1;
@@ -511,7 +511,7 @@ text {
   font-weight: 500;
 }
 
-.cut.stacked circle {
+.cut.stacked rect {
   fill: var(--cut);
 }
 
