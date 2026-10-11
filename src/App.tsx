@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   EFFORTS,
   optimise,
@@ -11,7 +11,18 @@ import {
   type StockSheet,
 } from './optimiser'
 import type { SearchRequest, Update } from './search.worker'
-import { jobFromHash, jobToHash, load, MAX_RUNS, newId, sampleJob, save, type Run, type Saved } from './storage'
+import {
+  jobFromHash,
+  jobToHash,
+  load,
+  MAX_RUNS,
+  newId,
+  sampleJob,
+  save,
+  type PartFill,
+  type Run,
+  type Saved,
+} from './storage'
 
 const mm = (n: number) => String(+n.toFixed(1))
 const m2 = (n: number) => (n / 1e6).toFixed(2)
@@ -35,8 +46,47 @@ const watch = (notify: () => void) => {
   return () => void watching.delete(notify)
 }
 
-/** Highlighter fills for parts, light enough for black labels and clear of the red kept for cuts. */
-const INKS = ['#fff04d', '#6fe3ff', '#b9a6ff', '#7dfc9a', '#ffa8e0', '#8ab4ff', '#c6f24a', '#ffc27a']
+/** Line colours for parts, chosen to stay distinct from one another, including for colour-blind readers. */
+const INKS = ['#0072b2', '#d55e00', '#009e73', '#cc79a7', 'var(--ink)', '#56b4e9', '#e69f00', '#777']
+
+const bird = (t: number, x: number, y: number) =>
+  `M${t * x},${t * y} q${t * 0.1},${-t * 0.2} ${t * 0.25},${t * 0.02} q${t * 0.12},${-t * 0.22} ${t * 0.27},${-t * 0.04}`
+
+/** Marks that tell parts apart without colour: a tile's side in units of t, then one tile drawn. */
+const MOTIFS: [number, (t: number) => ReactNode][] = [
+  [1, (t) => <path d={`M0,${t} L${t},0`} />],
+  [
+    1,
+    (t) => (
+      <>
+        <circle className="solid" cx={t * 0.25} cy={t * 0.25} r={t * 0.06} />
+        <circle className="solid" cx={t * 0.75} cy={t * 0.75} r={t * 0.06} />
+      </>
+    ),
+  ],
+  [1.5, (t) => <path d={bird(t, 0.1, 0.4) + bird(t, 0.85, 1.15)} />],
+  [1, (t) => <path d={`M0,${t / 2} q${t / 4},${-t * 0.35} ${t / 2},0 t${t / 2},0`} />],
+  [1, (t) => <circle cx={t / 2} cy={t / 2} r={t * 0.27} />],
+  [
+    1,
+    (t) => (
+      <path
+        d={[0.25, 0.75]
+          .map((c) => `M${t * (c - 0.13)},${t * c} h${t * 0.26} M${t * c},${t * (c - 0.13)} v${t * 0.26}`)
+          .join(' ')}
+      />
+    ),
+  ],
+  [1, (t) => <path d={`M${t / 2},0 V${t}`} />],
+  [1, (t) => <path d={`M${t * 0.3},${t * 0.68} L${t * 0.5},${t * 0.32} L${t * 0.7},${t * 0.68} Z`} />],
+  [
+    1,
+    (t) => (
+      <path d={`M${t * 0.1},${t * 0.25} h${t * 0.45} M${t * 0.6},${t * 0.75} h${t * 0.45} M${-t * 0.4},${t * 0.75} h${t * 0.45}`} />
+    ),
+  ],
+  [1, (t) => <path d={`M${t * 0.5},${t * 0.22} L${t * 0.78},${t * 0.5} L${t * 0.5},${t * 0.78} L${t * 0.22},${t * 0.5} Z`} />],
+]
 
 /** How long the inputs must rest before the URL is rewritten, in milliseconds. */
 const URL_DELAY = 300
@@ -84,6 +134,7 @@ export function App() {
   const safe = state.safe ?? true
   const showCuts = state.showCuts ?? true
   const showFences = state.showFences ?? true
+  const partFill = state.partFill ?? 'mono'
 
   useEffect(() => save(state), [state])
   // Keeps the address bar a link to the job as it stands. Debounced because browsers limit how
@@ -334,6 +385,17 @@ export function App() {
             />
             Show fence distances on the drawing
           </label>
+          <label>
+            Part fill
+            <select
+              value={partFill}
+              onChange={(e) => setState((s) => ({ ...s, partFill: e.target.value as PartFill }))}
+            >
+              <option value="none">None</option>
+              <option value="mono">Mono hatch</option>
+              <option value="colour">Colour</option>
+            </select>
+          </label>
         </section>
 
         <section className="row">
@@ -469,6 +531,7 @@ export function App() {
                 partIds={run.job.parts.map((p) => p.id)}
                 showCuts={showCuts}
                 showFences={showFences}
+                fill={partFill}
                 kerf={run.job.kerf}
               />
             ))}
@@ -544,12 +607,50 @@ function Fence({ cut, x, y, kerf, size }: { cut: Cut; x: number; y: number; kerf
   )
 }
 
+/** The fill for one part, sized against the sheet's length so it looks the same on any stock. */
+function Pattern({ id, part, fill, unit }: { id: string; part: number; fill: PartFill; unit: number }) {
+  if (fill === 'mono') {
+    const [side, draw] = MOTIFS[part % MOTIFS.length]
+    const t = unit / 80
+    return (
+      <pattern id={id} className="motif" patternUnits="userSpaceOnUse" width={t * side} height={t * side} strokeWidth={unit / 1400}>
+        {draw(t)}
+      </pattern>
+    )
+  }
+  const gap = unit / 157
+  // Neighbouring parts lean opposite ways, and so does each further round of the inks.
+  const lean = (part + Math.floor(part / INKS.length)) % 2 ? -45 : 45
+  return (
+    <pattern id={id} patternUnits="userSpaceOnUse" width={gap} height={gap} patternTransform={`rotate(${lean})`}>
+      <line x1={0} y1={gap / 2} x2={gap} y2={gap / 2} stroke={INKS[part % INKS.length]} strokeWidth={unit / 570} />
+    </pattern>
+  )
+}
+
+/** A hatched border just inside a part's edge, leaving the middle clear for its label. */
+function Band({ x, y, w, h, unit, stroke }: { x: number; y: number; w: number; h: number; unit: number; stroke: string }) {
+  const band = Math.min(unit / 90, w / 4, h / 4)
+  return (
+    <rect
+      className="band"
+      x={x + band / 2}
+      y={y + band / 2}
+      width={w - band}
+      height={h - band}
+      strokeWidth={band}
+      style={{ stroke }}
+    />
+  )
+}
+
 function Sheet({
   layout,
   index,
   partIds,
   showCuts,
   showFences,
+  fill,
   kerf,
 }: {
   layout: Layout
@@ -557,6 +658,7 @@ function Sheet({
   partIds: string[]
   showCuts: boolean
   showFences: boolean
+  fill: PartFill
   kerf: number
 }) {
   // Runs saved before the cutting order existed have none.
@@ -565,12 +667,8 @@ function Sheet({
   const maxFont = layout.length / 45
   const minFont = layout.length / 170
   const used = layout.placements.reduce((a, p) => a + p.w * p.h, 0)
-  const colour = (partId: string) => {
-    const i = partIds.indexOf(partId)
-    const ink = INKS[i % INKS.length]
-    // A job with more parts than inks goes round again in paler tints.
-    return i < INKS.length ? ink : `color-mix(in srgb, ${ink} 45%, #fff)`
-  }
+  const tile = layout.length / 80
+  const pattern = (partId: string) => `url(#fill-${index}-${partIds.indexOf(partId)})`
 
   const key = new Map<string, { partId: string; name: string; size: string; count: number }>()
   for (const p of layout.placements) {
@@ -600,7 +698,7 @@ function Sheet({
     return (
       <g transform={turned ? `rotate(-90 ${cx} ${cy})` : undefined}>
         {lines.map((line, i) => (
-          <text key={i} className={className} x={cx} y={top + i * size * 1.2} fontSize={size}>
+          <text key={i} className={className} x={cx} y={top + i * size * 1.2} fontSize={size} strokeWidth={size * 0.3}>
             {line}
           </text>
         ))}
@@ -621,6 +719,7 @@ function Sheet({
         viewBox={`0 0 ${layout.length} ${layout.width}`}
         role="img"
         aria-label={`Layout of sheet ${index + 1}`}
+        className={fill}
         onPointerMove={(e) => {
           const toSheet = e.currentTarget.getScreenCTM()?.inverse()
           if (!toSheet) return
@@ -632,6 +731,19 @@ function Sheet({
         }}
         onPointerLeave={() => setPointer(null)}
       >
+        {fill !== 'none' && (
+          <defs>
+            {[...key.keys()].map((partId) => (
+              <Pattern
+                key={partId}
+                id={`fill-${index}-${partIds.indexOf(partId)}`}
+                part={partIds.indexOf(partId)}
+                fill={fill}
+                unit={layout.length}
+              />
+            ))}
+          </defs>
+        )}
         <rect className="board" width={layout.length} height={layout.width} />
         {layout.offcuts.map((o, i) => (
           <g key={`o${i}`}>
@@ -642,7 +754,15 @@ function Sheet({
         {layout.placements.map((p, i) => (
           <g key={`p${i}`}>
             <title>{`${p.name}: ${mm(p.w)} × ${mm(p.h)}`}</title>
-            <rect className="part" x={p.x} y={p.y} width={p.w} height={p.h} fill={colour(p.partId)} />
+            <rect
+              className="part"
+              x={p.x}
+              y={p.y}
+              width={p.w}
+              height={p.h}
+              style={fill === 'mono' ? { fill: pattern(p.partId) } : undefined}
+            />
+            {fill === 'colour' && <Band x={p.x} y={p.y} w={p.w} h={p.h} unit={layout.length} stroke={pattern(p.partId)} />}
             {label([p.name, `${mm(p.w)} × ${mm(p.h)}`], p.x, p.y, p.w, p.h, 'part-label')}
           </g>
         ))}
@@ -680,7 +800,11 @@ function Sheet({
       <ul className="key">
         {[...key.values()].map((k) => (
           <li key={k.partId}>
-            <span className="swatch" style={{ background: colour(k.partId) }} />
+            {fill !== 'none' && (
+              <svg className="swatch" viewBox={`0 0 ${tile * 3.5} ${tile * 2.2}`} aria-hidden="true">
+                <rect width={tile * 3.5} height={tile * 2.2} style={{ fill: pattern(k.partId) }} />
+              </svg>
+            )}
             {k.count} × {k.name} <span className="size">{k.size}</span>
           </li>
         ))}

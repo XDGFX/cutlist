@@ -273,6 +273,21 @@ input[type='range'] {
   margin: 0;
 }
 
+select {
+  padding: 0.2rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--faint);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 0.8125rem/1.35 var(--mono);
+}
+
+select:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
 /* History and candidates: a stack of lines, the chosen one marked with a dot. */
 .stack {
   display: grid;
@@ -438,7 +453,26 @@ svg {
 }
 
 .part {
-  stroke: #000;
+  fill: var(--bg);
+  stroke: var(--ink);
+}
+
+.band {
+  fill: none;
+}
+
+.motif {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.motif .solid {
+  fill: var(--ink);
+  fill-opacity: 0.55;
+  stroke: none;
 }
 
 .board,
@@ -455,7 +489,15 @@ text {
 }
 
 .part-label {
-  fill: #000;
+  fill: var(--ink);
+  stroke: none;
+}
+
+/* The outline keeps a label readable over its part's pattern. */
+.mono .part-label {
+  stroke: var(--bg);
+  stroke-linejoin: round;
+  paint-order: stroke;
 }
 
 .offcut-label {
@@ -471,13 +513,19 @@ text {
   list-style: none;
 }
 
-.swatch {
-  display: inline-block;
-  width: 0.7em;
-  height: 0.7em;
-  margin-right: 0.5em;
-  border: 1px solid #000;
-  print-color-adjust: exact;
+.key li {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.key .swatch {
+  flex: none;
+  width: 2.4em;
+  height: 1.5em;
+  border: 1px solid var(--ink);
+  overflow: hidden;
+  cursor: auto;
 }
 
 .size {
