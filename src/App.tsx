@@ -10,6 +10,7 @@ import {
   type Solution,
   type StockSheet,
 } from './optimiser'
+import { flourishPage } from './flourish'
 import type { SearchRequest, Update } from './search.worker'
 import {
   jobFromHash,
@@ -213,7 +214,7 @@ export function App() {
     <div className="app">
       <header className="bar masthead">
         <Pointer axis="x" />
-        <h1>Cutlist</h1>
+        <Title />
         <Pointer axis="y" />
       </header>
 
@@ -513,6 +514,59 @@ function Num({ value, onChange }: { value: number; onChange: (n: number) => void
     <td>
       <input type="number" min="0" value={value || ''} onChange={(e) => onChange(e.target.valueAsNumber || 0)} />
     </td>
+  )
+}
+
+const TITLE = 'Cutlist'
+/** This many clicks on the title within this many milliseconds sets the whole page off. */
+const SPAM_CLICKS = 5
+const SPAM_WITHIN = 1500
+
+/** Ways to order the letters of the title: each gives every letter its place in the queue. */
+const ORDERS: ((n: number) => number[])[] = [
+  (n) => Array.from({ length: n }, (_, i) => i),
+  (n) => Array.from({ length: n }, (_, i) => n - 1 - i),
+  (n) => Array.from({ length: n }, (_, i) => Math.abs(i - (n - 1) / 2)),
+  (n) => Array.from({ length: n }, (_, i) => Math.min(i, n - 1 - i)),
+  (n) => Array.from({ length: n }, (_, i) => (i % 2) * n + i),
+  (n) => Array.from({ length: n }, () => Math.random()),
+]
+
+/** When each letter lights and for how long, in milliseconds, with a fresh order in and out. */
+function flourish(n: number): { at: number; lit: number }[] {
+  const pick = () => ORDERS[Math.floor(Math.random() * ORDERS.length)](n)
+  const rank = (keys: number[]) => keys.map((key) => new Set(keys.filter((other) => other < key)).size)
+  const step = 40 + Math.random() * 50
+  const on = rank(pick())
+  const off = rank(pick())
+  const hold = (Math.max(...on) + 3) * step
+  return on.map((place, i) => ({ at: place * step, lit: hold + (off[i] - place) * step }))
+}
+
+function Title() {
+  const [lit, setLit] = useState(() => [...TITLE].map(() => false))
+  // Every flourish flips its letters on and later off again, so overlapping flourishes cancel out.
+  const flip = (i: number) => setLit((was) => was.map((on, j) => (j === i ? !on : on)))
+  const clicks = useRef<number[]>([])
+  const play = () => {
+    flourish(TITLE.length).forEach((timing, i) => {
+      setTimeout(flip, timing.at, i)
+      setTimeout(flip, timing.at + timing.lit, i)
+    })
+    const now = performance.now()
+    clicks.current = [...clicks.current.filter((at) => now - at < SPAM_WITHIN), now]
+    if (clicks.current.length < SPAM_CLICKS) return
+    clicks.current = []
+    flourishPage()
+  }
+  return (
+    <h1 aria-label={TITLE} onClick={play}>
+      {[...TITLE].map((letter, i) => (
+        <span key={i} aria-hidden className={lit[i] ? 'lit' : undefined}>
+          {letter}
+        </span>
+      ))}
+    </h1>
   )
 }
 

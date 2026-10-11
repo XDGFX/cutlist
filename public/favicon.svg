@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    .ink { fill: #000; }
+    .offcut { fill: none; stroke: #000; stroke-width: 2; }
+    @media (prefers-color-scheme: dark) {
+      .ink { fill: #fff; }
+      .offcut { stroke: #fff; }
+    }
+  </style>
+  <rect class="ink" x="2" y="2" width="12" height="28"/>
+  <rect class="ink" x="17" y="2" width="13" height="16"/>
+  <rect class="offcut" x="18" y="22" width="11" height="7"/>
+</svg>

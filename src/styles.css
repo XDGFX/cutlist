@@ -86,6 +86,35 @@ h2 {
 
 .masthead h1 {
   font: 400 2rem/1 var(--title);
+  cursor: pointer;
+  user-select: none;
+}
+
+.masthead h1 .lit {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+/* A lit field is inverted whole, over the page colour where it has no fill of its own. */
+[data-lit] {
+  filter: invert(1);
+}
+
+[data-lit]:not([type='checkbox'], [type='range']) {
+  background-color: var(--bg) !important;
+}
+
+/* Spelt out because not every browser passes custom properties to a highlight. */
+::highlight(flourish) {
+  background-color: #000;
+  color: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  ::highlight(flourish) {
+    background-color: #fff;
+    color: #000;
+  }
 }
 
 .inputs {
