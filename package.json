@@ -10,8 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fontsource-variable/familjen-grotesk": "^5.3.0",
     "@fontsource/dm-mono": "^5.3.0",
+    "@fontsource/doto": "^5.3.0",
+    "@fontsource/vt323": "^5.3.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
