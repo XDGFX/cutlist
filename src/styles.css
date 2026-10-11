@@ -32,7 +32,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 0.8125rem/1.35 var(--sans);
+  font: 0.875rem/1.35 var(--sans);
 }
 
 .app {
@@ -40,6 +40,8 @@ body {
   grid-template-columns: minmax(340px, 26rem) 1fr;
   column-gap: 3rem;
   align-items: start;
+  /* Keeps the masthead its own height when the page is shorter than the window. */
+  align-content: start;
   min-height: 100vh;
   padding: 0 0.75rem 3rem;
 }
@@ -51,7 +53,7 @@ body {
   column-gap: 1em;
   align-items: baseline;
   margin: 0;
-  font: 400 0.9375rem/1.2 var(--mono);
+  font: 400 1rem/1.2 var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: center;
   text-transform: uppercase;
@@ -91,6 +93,9 @@ h2 {
 
 .inputs h2 {
   margin-bottom: 0.6rem;
+  font: 400 1rem/1.2 var(--mono);
+  text-align: center;
+  text-transform: uppercase;
 }
 
 main {
@@ -101,17 +106,11 @@ p {
   margin: 0;
 }
 
-.intro,
 .checks,
 .empty,
 .notice,
 .sequence ol {
   font-family: var(--sans);
-}
-
-.intro {
-  max-width: 34em;
-  color: var(--muted);
 }
 
 table {
@@ -122,9 +121,10 @@ table {
 
 th,
 .row label,
-dt,
+.fold summary,
+.summary,
 .sequence summary {
-  font: 400 0.6875rem/1.3 var(--mono);
+  font: 400 0.75rem/1.3 var(--mono);
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -164,7 +164,7 @@ input:not([type='checkbox'], [type='range']) {
   border-radius: 0;
   background: transparent;
   color: var(--ink);
-  font: 400 0.8125rem/1.35 var(--mono);
+  font: 400 0.875rem/1.35 var(--mono);
   text-transform: none;
   font-variant-numeric: tabular-nums;
 }
@@ -198,7 +198,7 @@ button {
   border-radius: 0;
   background: transparent;
   color: var(--muted);
-  font: 400 0.8125rem/1.2 var(--mono);
+  font: 400 0.875rem/1.2 var(--mono);
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -212,7 +212,7 @@ button.primary {
   padding: 0.7rem 1rem;
   background: var(--ink);
   color: var(--bg);
-  font-size: 0.9375rem;
+  font-size: 1rem;
 }
 
 button.primary:hover:not(:disabled)::before,
@@ -280,7 +280,7 @@ select {
   border-radius: 0;
   background: transparent;
   color: var(--ink);
-  font: 400 0.8125rem/1.35 var(--mono);
+  font: 400 0.875rem/1.35 var(--mono);
 }
 
 select:focus-visible {
@@ -288,18 +288,50 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-/* History and candidates: a stack of lines, the chosen one marked with a dot. */
+/* History: a stack of lines, the open run marked with a dot. */
 .stack {
   display: grid;
   gap: 0.27rem;
 }
 
 .stack .bar {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 
-main .stack .bar {
-  font-size: 0.9375rem;
+.fold summary,
+.sequence summary {
+  cursor: pointer;
+}
+
+.fold summary:hover,
+.sequence summary:hover {
+  color: var(--ink);
+}
+
+.fold[open] summary {
+  margin-bottom: 0.6rem;
+}
+
+/* The candidates by letter, the chosen one inverted, beside the chosen one's figures. */
+.letters {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.letters button {
+  min-width: 1.6em;
+  padding: 0.15em 0;
+  color: var(--ink);
+  font: inherit;
+}
+
+.letters button:hover {
+  background: var(--offcut);
+}
+
+.letters button[aria-current] {
+  background: var(--ink);
+  color: var(--bg);
 }
 
 .pick {
@@ -319,18 +351,15 @@ main .stack .bar {
 }
 
 .progress,
-.summary,
-main .stack,
-.stats,
+.chosen,
 .notice {
   margin-bottom: 1.5rem;
 }
 
 .progress,
 .summary,
-.stats,
+.chosen,
 .key,
-.offcuts,
 .sequence {
   font-variant-numeric: tabular-nums;
 }
@@ -358,14 +387,11 @@ main .stack,
   background: var(--ink);
 }
 
-.progress p,
-.summary,
-.offcuts {
+.progress p {
   color: var(--muted);
 }
 
-.progress strong,
-.summary strong {
+.progress strong {
   color: var(--ink);
   font-weight: 400;
 }
@@ -393,24 +419,6 @@ main .stack,
   .summary {
     animation: none;
   }
-}
-
-/* Figures set as running text: a grey label, then its value. */
-.stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.2rem 1.5em;
-  margin-top: 0;
-}
-
-.stats div {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5em;
-}
-
-dd {
-  margin: 0;
 }
 
 .empty {
@@ -521,15 +529,11 @@ text {
 
 .key .swatch {
   flex: none;
-  width: 2.4em;
-  height: 1.5em;
+  width: 3.2em;
+  height: 2em;
   border: 1px solid var(--ink);
   overflow: hidden;
   cursor: auto;
-}
-
-.size {
-  color: var(--muted);
 }
 
 /* Lets a badge on a cut at the sheet's edge show in full. */
@@ -581,20 +585,37 @@ text {
   paint-order: stroke;
 }
 
-.offcuts {
-  margin-top: 0.2rem;
+/* On screen a fence distance shows for the cut being pointed at; print shows them all. */
+.fence {
+  display: none;
+}
+
+.cut.hot .fence {
+  display: inline;
+}
+
+.cut.hot > line {
+  stroke-width: 2.5;
+}
+
+.cut.hot > rect {
+  fill: var(--ink);
+}
+
+.cut.hot > text {
+  fill: var(--bg);
+}
+
+.sequence li.hot {
+  background: var(--offcut);
 }
 
 .sequence {
   margin-top: 0.9rem;
 }
 
-.sequence summary {
-  cursor: pointer;
-}
-
-.sequence summary:hover {
-  color: var(--ink);
+.summary {
+  margin-top: 3rem;
 }
 
 .sequence ol {
@@ -637,6 +658,16 @@ text {
     margin-bottom: 0;
   }
 
+  .chosen {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.5rem;
+    text-align: left;
+  }
+
+  .chosen > :last-child {
+    justify-self: start;
+  }
+
   /* Anything smaller makes iOS zoom the page when a field takes focus. */
   input:not([type='checkbox'], [type='range']) {
     font-size: 1rem;
@@ -659,8 +690,12 @@ text {
 
   .masthead,
   .inputs,
-  main .stack,
+  .letters button:not([aria-current]),
   .notice:not(.warn) {
     display: none;
+  }
+
+  .fence {
+    display: inline;
   }
 }

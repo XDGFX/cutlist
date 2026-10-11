@@ -25,14 +25,9 @@ import {
 } from './storage'
 
 const mm = (n: number) => String(+n.toFixed(1))
-const m2 = (n: number) => (n / 1e6).toFixed(2)
 const count = (n: number) => n.toLocaleString('en-GB')
 const duration = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`)
-const two = (n: number) => String(n).padStart(2, '0')
 const total = (items: { qty: number }[]) => items.reduce((n, i) => n + i.qty, 0)
-const area = (items: { length: number; width: number; qty: number }[]) =>
-  `${m2(items.reduce((a, i) => a + i.length * i.width * i.qty, 0))} m²`
-
 /** Where the pointer is on a sheet drawing, in millimetres from its top left corner. */
 let pointer: { x: number; y: number } | null = null
 const watching = new Set<() => void>()
@@ -106,6 +101,13 @@ function largestOffcut(s: Solution): string {
   return largest ? `${largest.w.toFixed(0)} × ${largest.h.toFixed(0)} offcut` : 'no offcut'
 }
 
+/** The figures a candidate is chosen on, as one line. */
+const figures = (s: Solution) =>
+  `${s.stats.sheets} ${s.stats.sheets === 1 ? 'sheet' : 'sheets'}, ${s.stats.wastePct.toFixed(1)}% waste` +
+  (s.stats.stacked ? `, ⚠ ${s.stats.stacked} stacked` : '')
+const moves = (s: Solution) =>
+  `${s.stats.cuts} cuts` + (s.stats.fenceMoves === undefined ? '' : `, ${s.stats.fenceMoves} fence moves`)
+
 const solved = new Map<string, Solution[]>()
 
 /** Runs normally carry their solutions; one saved without them is worked out again once per visit. */
@@ -132,7 +134,6 @@ export function App() {
   const { job, runs } = state
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
   const showCuts = state.showCuts ?? true
-  const showFences = state.showFences ?? true
   const partFill = state.partFill ?? 'mono'
 
   useEffect(() => save(state), [state])
@@ -220,14 +221,8 @@ export function App() {
       </header>
 
       <aside className="inputs">
-        <p className="intro">Guillotine cut layouts for sheet goods. All dimensions in millimetres.</p>
-
         <section>
-          <div className="bar">
-            <span title="Stock sheets on hand">{two(total(job.stock))}</span>
-            <h2>Stock sheets</h2>
-            <span title="Total area of stock">{area(job.stock)}</span>
-          </div>
+          <h2>Stock sheets</h2>
           <table>
             <thead>
               <tr>
@@ -270,11 +265,7 @@ export function App() {
         </section>
 
         <section>
-          <div className="bar">
-            <span title="Parts to cut">{two(total(job.parts))}</span>
-            <h2>Parts</h2>
-            <span title="Total area of parts">{area(job.parts)}</span>
-          </div>
+          <h2>Parts</h2>
           <table>
             <thead>
               <tr>
@@ -359,7 +350,9 @@ export function App() {
           </button>
         </section>
 
-        <section className="checks">
+        <details className="fold">
+          <summary>Drawing options</summary>
+          <section className="checks">
           <label>
             <input
               type="checkbox"
@@ -367,14 +360,6 @@ export function App() {
               onChange={(e) => setState((s) => ({ ...s, showCuts: e.target.checked }))}
             />
             Number the cuts on the drawing
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={showFences}
-              onChange={(e) => setState((s) => ({ ...s, showFences: e.target.checked }))}
-            />
-            Show fence distances on the drawing
           </label>
           <label>
             Part fill
@@ -387,7 +372,8 @@ export function App() {
               <option value="colour">Colour</option>
             </select>
           </label>
-        </section>
+          </section>
+        </details>
 
         <section className="row">
           <button onClick={copyLink}>{copied ? 'Link copied' : 'Copy link to this job'}</button>
@@ -395,13 +381,9 @@ export function App() {
         </section>
 
         {runs.length > 0 && (
-          <nav aria-label="History">
-            <div className="bar">
-              <span>{two(runs.length)}</span>
-              <h2>History</h2>
-              <span />
-            </div>
-            <div className="stack">
+          <details className="fold">
+            <summary>History ({runs.length})</summary>
+            <nav className="stack" aria-label="History">
               {runs.map((r) => (
                 <div key={r.id} className="bar">
                   <span>{time(r.at)}</span>
@@ -424,8 +406,8 @@ export function App() {
                   </span>
                 </div>
               ))}
-            </div>
-          </nav>
+            </nav>
+          </details>
         )}
       </aside>
 
@@ -470,37 +452,22 @@ export function App() {
 
         {run && solution && (
           <>
-            {run.search && (
-              <p key={finished} className="summary">
-                Tried <strong>{count(run.search.tried)}</strong> layouts in {duration(run.search.ms)} at{' '}
-                {EFFORTS[run.effort ?? 0].name} effort · {run.search.improvements} improvements, the last at layout{' '}
-                {count(run.search.lastImprovedAt)}
-                {run.search.tried < run.search.total && ' · stopped early'}
-              </p>
-            )}
-            <nav className="stack" aria-label="Candidates">
-              {solutions.map((s, i) => (
-                <div key={i} className="bar" title={s.strategy}>
-                  <span>{String.fromCharCode(65 + i)}</span>
-                  <button className="pick" aria-current={s === solution || undefined} onClick={() => pick(i)}>
-                    {s.stats.sheets} {s.stats.sheets === 1 ? 'sheet' : 'sheets'}, {largestOffcut(s)}
-                    {s.stats.stacked ? `, ⚠ ${s.stats.stacked} stacked` : ''}
+            <div className="bar chosen">
+              <nav className="letters" aria-label="Candidates">
+                {solutions.map((s, i) => (
+                  <button
+                    key={i}
+                    aria-current={s === solution || undefined}
+                    title={`${figures(s)}, ${moves(s)}. ${s.strategy}`}
+                    onClick={() => pick(i)}
+                  >
+                    {String.fromCharCode(65 + i)}
                   </button>
-                  <span>{s.stats.cuts} cuts</span>
-                </div>
-              ))}
-            </nav>
-
-            <dl className="stats">
-              <Stat label="Sheets used" value={String(solution.stats.sheets)} />
-              <Stat label="Parts placed" value={String(solution.stats.placed)} />
-              <Stat label="Used" value={`${m2(solution.stats.usedArea)} m²`} />
-              <Stat label="Waste" value={`${m2(solution.stats.wasteArea)} m² (${solution.stats.wastePct.toFixed(1)}%)`} />
-              <Stat label="Cuts" value={String(solution.stats.cuts)} />
-              <Stat label="Fence moves" value={String(solution.stats.fenceMoves ?? '–')} />
-              <Stat label="Cut length"value={`${(solution.stats.cutLength / 1000).toFixed(2)} m`} />
-              <Stat label="Stacked sizes" value={String(solution.stats.stacked ?? '–')} />
-            </dl>
+                ))}
+              </nav>
+              <span>{figures(solution)}</span>
+              <span>{moves(solution)}</span>
+            </div>
 
             {solution.stats.stacked > 0 && (
               <p className="notice warn">
@@ -522,11 +489,17 @@ export function App() {
                 layout={layout}
                 partIds={run.job.parts.map((p) => p.id)}
                 showCuts={showCuts}
-                showFences={showFences}
                 fill={partFill}
                 kerf={run.job.kerf}
               />
             ))}
+            {run.search && (
+              <p key={finished} className="summary">
+                Tried {count(run.search.tried)} layouts in {duration(run.search.ms)} at {EFFORTS[run.effort ?? 0].name}{' '}
+                effort · {run.search.improvements} improvements, the last at layout {count(run.search.lastImprovedAt)}
+                {run.search.tried < run.search.total && ' · stopped early'}
+              </p>
+            )}
           </>
         )}
       </main>
@@ -544,20 +517,13 @@ function Num({ value, onChange }: { value: number; onChange: (n: number) => void
 
 function Pointer({ axis }: { axis: 'x' | 'y' }) {
   const at = useSyncExternalStore(watch, () => pointer)
+  // An empty slot keeps the title centred while the pointer is off the drawings.
+  if (!at) return <span />
   return (
     <span title={`Pointer position on a sheet, in millimetres from its ${axis === 'x' ? 'left' : 'top'} edge`}>
       {axis.toUpperCase()}
-      {at ? Math.round(at[axis]) : 0}
+      {Math.round(at[axis])}
     </span>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
   )
 }
 
@@ -599,30 +565,33 @@ function Fence({ cut, x, y, kerf, size }: { cut: Cut; x: number; y: number; kerf
   )
 }
 
+/** How many mono motif tiles fit along a sheet's length. */
+const TILES = 45
+
 /** The fill for one part, sized against the sheet's length so it looks the same on any stock. */
 function Pattern({ id, part, fill, unit }: { id: string; part: number; fill: PartFill; unit: number }) {
   if (fill === 'mono') {
     const [side, draw] = MOTIFS[part % MOTIFS.length]
-    const t = unit / 80
+    const t = unit / TILES
     return (
-      <pattern id={id} className="motif" patternUnits="userSpaceOnUse" width={t * side} height={t * side} strokeWidth={unit / 1400}>
+      <pattern id={id} className="motif" patternUnits="userSpaceOnUse" width={t * side} height={t * side} strokeWidth={unit / 900}>
         {draw(t)}
       </pattern>
     )
   }
-  const gap = unit / 157
+  const gap = unit / 110
   // Neighbouring parts lean opposite ways, and so does each further round of the inks.
   const lean = (part + Math.floor(part / INKS.length)) % 2 ? -45 : 45
   return (
     <pattern id={id} patternUnits="userSpaceOnUse" width={gap} height={gap} patternTransform={`rotate(${lean})`}>
-      <line x1={0} y1={gap / 2} x2={gap} y2={gap / 2} stroke={INKS[part % INKS.length]} strokeWidth={unit / 570} />
+      <line x1={0} y1={gap / 2} x2={gap} y2={gap / 2} stroke={INKS[part % INKS.length]} strokeWidth={unit / 450} />
     </pattern>
   )
 }
 
 /** A hatched border just inside a part's edge, leaving the middle clear for its label. */
 function Band({ x, y, w, h, unit, stroke }: { x: number; y: number; w: number; h: number; unit: number; stroke: string }) {
-  const band = Math.min(unit / 90, w / 4, h / 4)
+  const band = Math.min(unit / 65, w / 4, h / 4)
   return (
     <rect
       className="band"
@@ -641,7 +610,6 @@ function Sheet({
   index,
   partIds,
   showCuts,
-  showFences,
   fill,
   kerf,
 }: {
@@ -649,23 +617,47 @@ function Sheet({
   index: number
   partIds: string[]
   showCuts: boolean
-  showFences: boolean
   fill: PartFill
   kerf: number
 }) {
+  // The cut whose fence distance shows on screen; print shows them all.
+  const [hot, setHot] = useState<number | null>(null)
+  const heat = (i: number) => ({
+    onPointerEnter: () => setHot(i),
+    onPointerLeave: () => setHot(null),
+    // A tap has no hover to end, so it toggles.
+    onClick: () => setHot((was) => (was === i ? null : i)),
+  })
+  const order = useRef<HTMLDetailsElement>(null)
+  // The cutting order is folded on screen but is wanted on paper.
+  useEffect(() => {
+    let wasOpen = false
+    const open = () => {
+      wasOpen = order.current?.open ?? false
+      if (order.current) order.current.open = true
+    }
+    const restore = () => {
+      if (order.current) order.current.open = wasOpen
+    }
+    addEventListener('beforeprint', open)
+    addEventListener('afterprint', restore)
+    return () => {
+      removeEventListener('beforeprint', open)
+      removeEventListener('afterprint', restore)
+    }
+  }, [])
   // Runs saved before the cutting order existed have none.
   const sequence = layout.sequence ?? []
-  const badge = layout.length / 125
+  const badge = layout.length / 85
   const maxFont = layout.length / 45
-  const minFont = layout.length / 170
+  const minFont = layout.length / 120
   const used = layout.placements.reduce((a, p) => a + p.w * p.h, 0)
-  const tile = layout.length / 80
+  const tile = layout.length / TILES
   const pattern = (partId: string) => `url(#fill-${index}-${partIds.indexOf(partId)})`
 
-  const key = new Map<string, { partId: string; name: string; size: string; count: number }>()
+  const key = new Map<string, { partId: string; name: string; count: number }>()
   for (const p of layout.placements) {
-    const size = `${mm(Math.max(p.w, p.h))} × ${mm(Math.min(p.w, p.h))}`
-    const entry = key.get(p.partId) ?? { partId: p.partId, name: p.name, size, count: 0 }
+    const entry = key.get(p.partId) ?? { partId: p.partId, name: p.name, count: 0 }
     entry.count++
     key.set(p.partId, entry)
   }
@@ -701,7 +693,7 @@ function Sheet({
   return (
     <figure className="sheet">
       <figcaption className="bar">
-        <span title={`Sheet ${index + 1}`}>{two(index + 1)}</span>
+        <span>Sheet {index + 1}</span>
         <span>
           {layout.stockName} {mm(layout.length)} × {mm(layout.width)}
         </span>
@@ -739,6 +731,7 @@ function Sheet({
         <rect className="board" width={layout.length} height={layout.width} />
         {layout.offcuts.map((o, i) => (
           <g key={`o${i}`}>
+            <title>{`Offcut: ${mm(o.w)} × ${mm(o.h)}`}</title>
             <rect className="offcut" x={o.x} y={o.y} width={o.w} height={o.h} />
             {label([`${mm(o.w)} × ${mm(o.h)}`], o.x, o.y, o.w, o.h, 'offcut-label')}
           </g>
@@ -758,8 +751,7 @@ function Sheet({
             {label([p.name, `${mm(p.w)} × ${mm(p.h)}`], p.x, p.y, p.w, p.h, 'part-label')}
           </g>
         ))}
-        {(showCuts || showFences) &&
-          sequence.map((c, i) => {
+        {sequence.map((c, i) => {
             const length = c.x2 - c.x1 + c.y2 - c.y1
             const at = (t: number) => [c.x1 + (c.x2 - c.x1) * t, c.y1 + (c.y2 - c.y1) * t]
             // Staggered so that badges on neighbouring cuts do not pile up, and kept towards one
@@ -769,9 +761,13 @@ function Sheet({
             // The fence arrow sits just past the badge so the two do not cover each other.
             const [fx, fy] = at(along + Math.min(2.4 * badge, length * 0.2) / length)
             return (
-              <g key={`c${i}`} className={c.remainder.length ? 'cut stacked' : 'cut'}>
+              <g
+                key={`c${i}`}
+                className={`cut${c.remainder.length ? ' stacked' : ''}${hot === i ? ' hot' : ''}`}
+                {...heat(i)}
+              >
                 <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} />
-                {showFences && <Fence cut={c} x={fx} y={fy} kerf={kerf} size={badge} />}
+                <Fence cut={c} x={fx} y={fy} kerf={kerf} size={badge} />
                 {showCuts && (
                   <>
                     <rect
@@ -793,23 +789,24 @@ function Sheet({
         {[...key.values()].map((k) => (
           <li key={k.partId}>
             {fill !== 'none' && (
-              <svg className="swatch" viewBox={`0 0 ${tile * 3.5} ${tile * 2.2}`} aria-hidden="true">
-                <rect width={tile * 3.5} height={tile * 2.2} style={{ fill: pattern(k.partId) }} />
+              <svg className="swatch" viewBox={`0 0 ${tile * 2.4} ${tile * 1.5}`} aria-hidden="true">
+                <rect width={tile * 2.4} height={tile * 1.5} style={{ fill: pattern(k.partId) }} />
               </svg>
             )}
-            {k.count} × {k.name} <span className="size">{k.size}</span>
+            {k.count} × {k.name}
           </li>
         ))}
       </ul>
-      {layout.offcuts.length > 0 && (
-        <p className="offcuts">Offcuts: {layout.offcuts.map((o) => `${mm(o.w)} × ${mm(o.h)}`).join(', ')}</p>
-      )}
       {sequence.length > 0 && (
-        <details className="sequence" open>
+        <details ref={order} className="sequence">
           <summary>Cutting order ({sequence.length} cuts)</summary>
           <ol>
             {sequence.map((c, i) => (
-              <li key={i} className={c.remainder.length ? 'stacked' : undefined}>
+              <li
+                key={i}
+                className={`${c.remainder.length ? 'stacked' : ''}${hot === i ? ' hot' : ''}`}
+                {...heat(i)}
+              >
                 {c.rip ? 'Rip' : 'Crosscut'} at <strong>{mm(c.fence)}</strong> from the{' '}
                 {c.rip ? (c.far ? 'bottom' : 'top') : c.far ? 'right' : 'left'}
                 {c.sizes.length > 0 ? ` → ${c.sizes.join(', ')}` : ' → frees leftover'}
