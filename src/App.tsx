@@ -134,6 +134,15 @@ export function App() {
   const showCuts = state.showCuts ?? true
   const showFences = state.showFences ?? true
   const partFill = state.partFill ?? 'mono'
+  const [variant, setVariant] = useState(readVariant)
+  const lean = variant !== 'A'
+  const bare = variant === 'C'
+  const switchVariant = (to: Variant) => {
+    const url = new URL(location.href)
+    url.searchParams.set('variant', to)
+    history.replaceState(null, '', url)
+    setVariant(to)
+  }
 
   useEffect(() => save(state), [state])
   // Keeps the address bar a link to the job as it stands. Debounced because browsers limit how
@@ -211,12 +220,21 @@ export function App() {
     setTimeout(() => setCopied(false), 1500)
   }
 
+  const searchSummary = run?.search && (
+    <p key={finished} className="summary">
+      Tried <strong>{count(run.search.tried)}</strong> layouts in {duration(run.search.ms)} at{' '}
+      {EFFORTS[run.effort ?? 0].name} effort · {run.search.improvements} improvements, the last at layout{' '}
+      {count(run.search.lastImprovedAt)}
+      {run.search.tried < run.search.total && ' · stopped early'}
+    </p>
+  )
+
   return (
     <div className="app">
       <header className="bar masthead">
-        <Pointer axis="x" />
+        <Pointer axis="x" quiet={lean} />
         <h1>Cutlist</h1>
-        <Pointer axis="y" />
+        <Pointer axis="y" quiet={lean} />
       </header>
 
       <aside className="inputs">
@@ -224,9 +242,11 @@ export function App() {
 
         <section>
           <div className="bar">
-            <span title="Stock sheets on hand">{two(total(job.stock))}</span>
+            <span title="Stock sheets on hand">
+              {bare ? '' : lean ? `${total(job.stock)} on hand` : two(total(job.stock))}
+            </span>
             <h2>Stock sheets</h2>
-            <span title="Total area of stock">{area(job.stock)}</span>
+            <span title="Total area of stock">{bare ? '' : area(job.stock)}</span>
           </div>
           <table>
             <thead>
@@ -271,9 +291,9 @@ export function App() {
 
         <section>
           <div className="bar">
-            <span title="Parts to cut">{two(total(job.parts))}</span>
+            <span title="Parts to cut">{bare ? '' : lean ? `${total(job.parts)} to cut` : two(total(job.parts))}</span>
             <h2>Parts</h2>
-            <span title="Total area of parts">{area(job.parts)}</span>
+            <span title="Total area of parts">{bare ? '' : area(job.parts)}</span>
           </div>
           <table>
             <thead>
@@ -359,6 +379,7 @@ export function App() {
           </button>
         </section>
 
+        <Fold when={bare} label="Drawing options">
         <section className="checks">
           <label>
             <input
@@ -368,14 +389,16 @@ export function App() {
             />
             Number the cuts on the drawing
           </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={showFences}
-              onChange={(e) => setState((s) => ({ ...s, showFences: e.target.checked }))}
-            />
-            Show fence distances on the drawing
-          </label>
+          {!lean && (
+            <label>
+              <input
+                type="checkbox"
+                checked={showFences}
+                onChange={(e) => setState((s) => ({ ...s, showFences: e.target.checked }))}
+              />
+              Show fence distances on the drawing
+            </label>
+          )}
           <label>
             Part fill
             <select
@@ -388,6 +411,7 @@ export function App() {
             </select>
           </label>
         </section>
+        </Fold>
 
         <section className="row">
           <button onClick={copyLink}>{copied ? 'Link copied' : 'Copy link to this job'}</button>
@@ -396,11 +420,14 @@ export function App() {
 
         {runs.length > 0 && (
           <nav aria-label="History">
-            <div className="bar">
-              <span>{two(runs.length)}</span>
-              <h2>History</h2>
-              <span />
-            </div>
+            <Fold when={bare} label={`History (${runs.length})`}>
+            {!bare && (
+              <div className="bar">
+                <span>{lean ? '' : two(runs.length)}</span>
+                <h2>History</h2>
+                <span />
+              </div>
+            )}
             <div className="stack">
               {runs.map((r) => (
                 <div key={r.id} className="bar">
@@ -425,9 +452,11 @@ export function App() {
                 </div>
               ))}
             </div>
+            </Fold>
           </nav>
         )}
       </aside>
+      {import.meta.env.DEV && <Switcher variant={variant} onChange={switchVariant} />}
 
       <main>
         {searching && (
@@ -470,28 +499,68 @@ export function App() {
 
         {run && solution && (
           <>
-            {run.search && (
-              <p key={finished} className="summary">
-                Tried <strong>{count(run.search.tried)}</strong> layouts in {duration(run.search.ms)} at{' '}
-                {EFFORTS[run.effort ?? 0].name} effort · {run.search.improvements} improvements, the last at layout{' '}
-                {count(run.search.lastImprovedAt)}
-                {run.search.tried < run.search.total && ' · stopped early'}
-              </p>
-            )}
-            <nav className="stack" aria-label="Candidates">
-              {solutions.map((s, i) => (
-                <div key={i} className="bar" title={s.strategy}>
-                  <span>{String.fromCharCode(65 + i)}</span>
-                  <button className="pick" aria-current={s === solution || undefined} onClick={() => pick(i)}>
-                    {s.stats.sheets} {s.stats.sheets === 1 ? 'sheet' : 'sheets'}, {largestOffcut(s)}
-                    {s.stats.stacked ? `, ⚠ ${s.stats.stacked} stacked` : ''}
-                  </button>
-                  <span>{s.stats.cuts} cuts</span>
+            {!lean && searchSummary}
+            {lean ? (
+              <nav className="stack" aria-label="Candidates">
+                <div className="bar">
+                  <span>{String.fromCharCode(65 + solutions.indexOf(solution))}</span>
+                  <span>
+                    ● {solution.stats.sheets} {solution.stats.sheets === 1 ? 'sheet' : 'sheets'},{' '}
+                    {bare ? `${solution.stats.wastePct.toFixed(1)}% waste` : largestOffcut(solution)}
+                    {solution.stats.stacked ? `, ⚠ ${solution.stats.stacked} stacked` : ''}
+                  </span>
+                  <span>{solution.stats.cuts} cuts</span>
                 </div>
-              ))}
-            </nav>
+                {solutions.length > 1 && (
+                  <details className="fold">
+                    <summary>{solutions.length - 1} alternatives</summary>
+                    <div className="stack">
+                      {solutions.map((s, i) =>
+                        s === solution ? null : (
+                          <div key={i} className="bar" title={s.strategy}>
+                            <span>{String.fromCharCode(65 + i)}</span>
+                            <button className="pick" onClick={() => pick(i)}>
+                              {[
+                                s.stats.sheets !== solution.stats.sheets && `${s.stats.sheets} sheets`,
+                                largestOffcut(s) !== largestOffcut(solution) && largestOffcut(s),
+                                s.stats.cuts !== solution.stats.cuts && `${s.stats.cuts} cuts`,
+                                (s.stats.stacked ?? 0) !== (solution.stats.stacked ?? 0) &&
+                                  `${s.stats.stacked ?? 0} stacked`,
+                              ]
+                                .filter(Boolean)
+                                .join(', ') || 'same figures, different arrangement'}
+                            </button>
+                            <span />
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </details>
+                )}
+              </nav>
+            ) : (
+              <nav className="stack" aria-label="Candidates">
+                {solutions.map((s, i) => (
+                  <div key={i} className="bar" title={s.strategy}>
+                    <span>{String.fromCharCode(65 + i)}</span>
+                    <button className="pick" aria-current={s === solution || undefined} onClick={() => pick(i)}>
+                      {s.stats.sheets} {s.stats.sheets === 1 ? 'sheet' : 'sheets'}, {largestOffcut(s)}
+                      {s.stats.stacked ? `, ⚠ ${s.stats.stacked} stacked` : ''}
+                    </button>
+                    <span>{s.stats.cuts} cuts</span>
+                  </div>
+                ))}
+              </nav>
+            )}
 
-            <dl className="stats">
+            {lean && !bare && (
+              <dl className="stats">
+                <Stat label="Sheets used" value={String(solution.stats.sheets)} />
+                <Stat label="Waste" value={`${m2(solution.stats.wasteArea)} m² (${solution.stats.wastePct.toFixed(1)}%)`} />
+                <Stat label="Cuts" value={String(solution.stats.cuts)} />
+              </dl>
+            )}
+            <dl className="stats" hidden={lean}>
               <Stat label="Sheets used" value={String(solution.stats.sheets)} />
               <Stat label="Parts placed" value={String(solution.stats.placed)} />
               <Stat label="Used" value={`${m2(solution.stats.usedArea)} m²`} />
@@ -525,8 +594,11 @@ export function App() {
                 showFences={showFences}
                 fill={partFill}
                 kerf={run.job.kerf}
+                lean={lean}
+                bare={bare}
               />
             ))}
+            {lean && searchSummary}
           </>
         )}
       </main>
@@ -542,8 +614,52 @@ function Num({ value, onChange }: { value: number; onChange: (n: number) => void
   )
 }
 
-function Pointer({ axis }: { axis: 'x' | 'y' }) {
+// PROTOTYPE: three levels of reduction on the real page, switchable via ?variant= in dev only.
+// A is the page as shipped, B applies review items 1 to 4, C also applies 5 to 7.
+const VARIANTS = { A: 'As shipped', B: 'Lean', C: 'Bare' } as const
+type Variant = keyof typeof VARIANTS
+const readVariant = (): Variant => {
+  const asked = new URLSearchParams(location.search).get('variant')
+  return import.meta.env.DEV && asked && asked in VARIANTS ? (asked as Variant) : 'A'
+}
+
+function Switcher({ variant, onChange }: { variant: Variant; onChange: (to: Variant) => void }) {
+  const keys = Object.keys(VARIANTS) as Variant[]
+  const step = (by: number) => onChange(keys[(keys.indexOf(variant) + by + keys.length) % keys.length])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest('input, select, textarea, [contenteditable]')) return
+      if (e.key === 'ArrowLeft') step(-1)
+      if (e.key === 'ArrowRight') step(1)
+    }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  })
+  return (
+    <div className="proto-switcher">
+      <button onClick={() => step(-1)}>←</button>
+      <span>
+        {variant} ({VARIANTS[variant]})
+      </span>
+      <button onClick={() => step(1)}>→</button>
+    </div>
+  )
+}
+
+/** PROTOTYPE: folds its children behind a summary when asked to. */
+function Fold({ when, label, children }: { when: boolean; label: string; children: ReactNode }) {
+  if (!when) return <>{children}</>
+  return (
+    <details className="fold">
+      <summary>{label}</summary>
+      {children}
+    </details>
+  )
+}
+
+function Pointer({ axis, quiet }: { axis: 'x' | 'y'; quiet: boolean }) {
   const at = useSyncExternalStore(watch, () => pointer)
+  if (quiet && !at) return <span />
   return (
     <span title={`Pointer position on a sheet, in millimetres from its ${axis === 'x' ? 'left' : 'top'} edge`}>
       {axis.toUpperCase()}
@@ -644,6 +760,8 @@ function Sheet({
   showFences,
   fill,
   kerf,
+  lean,
+  bare,
 }: {
   layout: Layout
   index: number
@@ -652,7 +770,19 @@ function Sheet({
   showFences: boolean
   fill: PartFill
   kerf: number
+  lean: boolean
+  bare: boolean
 }) {
+  // PROTOTYPE: the cut whose fence is shown, picked by hovering its badge or its line in the list.
+  const [hot, setHot] = useState<number | null>(null)
+  const heat = (i: number) =>
+    lean
+      ? {
+          onPointerEnter: () => setHot(i),
+          onPointerLeave: () => setHot(null),
+          onClick: () => setHot((h) => (h === i ? null : i)),
+        }
+      : {}
   // Runs saved before the cutting order existed have none.
   const sequence = layout.sequence ?? []
   const badge = layout.length / 125
@@ -701,7 +831,7 @@ function Sheet({
   return (
     <figure className="sheet">
       <figcaption className="bar">
-        <span title={`Sheet ${index + 1}`}>{two(index + 1)}</span>
+        <span title={`Sheet ${index + 1}`}>{lean ? `Sheet ${index + 1}` : two(index + 1)}</span>
         <span>
           {layout.stockName} {mm(layout.length)} × {mm(layout.width)}
         </span>
@@ -758,7 +888,7 @@ function Sheet({
             {label([p.name, `${mm(p.w)} × ${mm(p.h)}`], p.x, p.y, p.w, p.h, 'part-label')}
           </g>
         ))}
-        {(showCuts || showFences) &&
+        {(showCuts || showFences || lean) &&
           sequence.map((c, i) => {
             const length = c.x2 - c.x1 + c.y2 - c.y1
             const at = (t: number) => [c.x1 + (c.x2 - c.x1) * t, c.y1 + (c.y2 - c.y1) * t]
@@ -769,9 +899,13 @@ function Sheet({
             // The fence arrow sits just past the badge so the two do not cover each other.
             const [fx, fy] = at(along + Math.min(2.4 * badge, length * 0.2) / length)
             return (
-              <g key={`c${i}`} className={c.remainder.length ? 'cut stacked' : 'cut'}>
+              <g
+                key={`c${i}`}
+                className={`cut${c.remainder.length ? ' stacked' : ''}${hot === i ? ' hot' : ''}`}
+                {...heat(i)}
+              >
                 <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} />
-                {showFences && <Fence cut={c} x={fx} y={fy} kerf={kerf} size={badge} />}
+                {(lean ? hot === i : showFences) && <Fence cut={c} x={fx} y={fy} kerf={kerf} size={badge} />}
                 {showCuts && (
                   <>
                     <rect
@@ -797,19 +931,23 @@ function Sheet({
                 <rect width={tile * 3.5} height={tile * 2.2} style={{ fill: pattern(k.partId) }} />
               </svg>
             )}
-            {k.count} × {k.name} <span className="size">{k.size}</span>
+            {k.count} × {k.name} {!bare && <span className="size">{k.size}</span>}
           </li>
         ))}
       </ul>
-      {layout.offcuts.length > 0 && (
+      {layout.offcuts.length > 0 && !bare && (
         <p className="offcuts">Offcuts: {layout.offcuts.map((o) => `${mm(o.w)} × ${mm(o.h)}`).join(', ')}</p>
       )}
       {sequence.length > 0 && (
-        <details className="sequence" open>
+        <details key={String(bare)} className="sequence" open={!bare}>
           <summary>Cutting order ({sequence.length} cuts)</summary>
           <ol>
             {sequence.map((c, i) => (
-              <li key={i} className={c.remainder.length ? 'stacked' : undefined}>
+              <li
+                key={i}
+                className={`${c.remainder.length ? 'stacked' : ''}${hot === i ? ' hot' : ''}`}
+                {...heat(i)}
+              >
                 {c.rip ? 'Rip' : 'Crosscut'} at <strong>{mm(c.fence)}</strong> from the{' '}
                 {c.rip ? (c.far ? 'bottom' : 'top') : c.far ? 'right' : 'left'}
                 {c.sizes.length > 0 ? ` → ${c.sizes.join(', ')}` : ' → frees leftover'}
