@@ -444,6 +444,24 @@ text {
   fill: var(--accent-ink);
 }
 
+.cut .fence line {
+  stroke: var(--ink);
+  opacity: 0.45;
+}
+
+.fence polygon {
+  fill: var(--ink);
+  opacity: 0.6;
+}
+
+/* The outline keeps the figure readable where it crosses a part label. */
+.cut .fence text {
+  fill: var(--ink);
+  stroke: var(--panel);
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
 .sequence {
   margin-top: 8px;
   font-variant-numeric: tabular-nums;

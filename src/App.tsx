@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   EFFORTS,
   optimise,
+  type Cut,
   type Job,
   type Layout,
   type Part,
@@ -16,6 +17,9 @@ const mm = (n: number) => String(+n.toFixed(1))
 const m2 = (n: number) => (n / 1e6).toFixed(2)
 const count = (n: number) => n.toLocaleString('en-GB')
 const duration = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`)
+
+/** How long the inputs must rest before the URL is rewritten, in milliseconds. */
+const URL_DELAY = 300
 
 interface Searching {
   stats: SearchStats
@@ -59,8 +63,21 @@ export function App() {
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
   const safe = state.safe ?? true
   const showCuts = state.showCuts ?? true
+  const showFences = state.showFences ?? true
 
   useEffect(() => save(state), [state])
+  // Keeps the address bar a link to the job as it stands. Debounced because browsers limit how
+  // often the URL may be rewritten.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        history.replaceState(null, '', jobToHash(job))
+      } catch {
+        // A refused rewrite leaves the previous link in place.
+      }
+    }, URL_DELAY)
+    return () => clearTimeout(timer)
+  }, [job])
   useEffect(() => () => worker.current?.terminate(), [])
 
   const run = runs.find((r) => r.id === state.activeRun) ?? null
@@ -278,6 +295,14 @@ export function App() {
             />
             Number the cuts on the drawing
           </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={showFences}
+              onChange={(e) => setState((s) => ({ ...s, showFences: e.target.checked }))}
+            />
+            Show fence distances on the drawing
+          </label>
         </section>
 
         <section className="row">
@@ -388,6 +413,8 @@ export function App() {
                 layout={layout}
                 partIds={run.job.parts.map((p) => p.id)}
                 showCuts={showCuts}
+                showFences={showFences}
+                kerf={run.job.kerf}
               />
             ))}
           </>
@@ -414,16 +441,58 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
+/** A dimension arrow from the reference edge of the piece being cut to the near face of the blade. */
+function Fence({ cut, x, y, kerf, size }: { cut: Cut; x: number; y: number; kerf: number; size: number }) {
+  // Which way the reference edge lies from the blade, along the axis the fence is measured on.
+  const dir = cut.far ? 1 : -1
+  const face = (cut.rip ? cut.y1 : cut.x1) + (dir * kerf) / 2
+  const edge = face + dir * cut.fence
+  const head = size * 0.7
+  const half = head * 0.4
+  const arrowhead = (tip: number, towards: number) => {
+    const base = tip - towards * head
+    return cut.rip
+      ? `${x},${tip} ${x - half},${base} ${x + half},${base}`
+      : `${tip},${y} ${base},${y - half} ${base},${y + half}`
+  }
+
+  return (
+    <g className="fence">
+      {cut.rip ? <line x1={x} y1={edge} x2={x} y2={face} /> : <line x1={edge} y1={y} x2={face} y2={y} />}
+      {cut.fence >= head * 3 && (
+        <>
+          <polygon points={arrowhead(face, -dir)} />
+          <polygon points={arrowhead(edge, dir)} />
+        </>
+      )}
+      {/* The figure sits by the blade end, beside the cut's number, clear of the part labels. */}
+      <text
+        x={cut.rip ? x + size * 0.7 : face + dir * size * 0.9}
+        y={cut.rip ? face + dir * size * 1.1 : y - size * 1.1}
+        fontSize={size * 1.3}
+        strokeWidth={size * 0.4}
+        style={{ textAnchor: cut.rip || dir > 0 ? 'start' : 'end' }}
+      >
+        {mm(cut.fence)}
+      </text>
+    </g>
+  )
+}
+
 function Sheet({
   layout,
   index,
   partIds,
   showCuts,
+  showFences,
+  kerf,
 }: {
   layout: Layout
   index: number
   partIds: string[]
   showCuts: boolean
+  showFences: boolean
+  kerf: number
 }) {
   // Runs saved before the cutting order existed have none.
   const sequence = layout.sequence ?? []
@@ -493,19 +562,28 @@ function Sheet({
             {label([p.name, `${mm(p.w)} × ${mm(p.h)}`], p.x, p.y, p.w, p.h, 'part-label')}
           </g>
         ))}
-        {showCuts &&
+        {(showCuts || showFences) &&
           sequence.map((c, i) => {
-            // Staggered along the cut so that badges on neighbouring cuts do not pile up.
-            const along = 0.25 + 0.5 * ((i * 0.618) % 1)
-            const x = c.x1 + (c.x2 - c.x1) * along
-            const y = c.y1 + (c.y2 - c.y1) * along
+            const length = c.x2 - c.x1 + c.y2 - c.y1
+            const at = (t: number) => [c.x1 + (c.x2 - c.x1) * t, c.y1 + (c.y2 - c.y1) * t]
+            // Staggered so that badges on neighbouring cuts do not pile up, and kept towards one
+            // end of the cut, away from the part labels in the middle.
+            const along = 0.12 + 0.3 * ((i * 0.618) % 1)
+            const [x, y] = at(along)
+            // The fence arrow sits just past the badge so the two do not cover each other.
+            const [fx, fy] = at(along + Math.min(2.4 * badge, length * 0.2) / length)
             return (
               <g key={`c${i}`} className={c.remainder.length ? 'cut stacked' : 'cut'}>
                 <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} />
-                <circle cx={x} cy={y} r={badge} />
-                <text x={x} y={y} fontSize={badge * 1.2}>
-                  {i + 1}
-                </text>
+                {showFences && <Fence cut={c} x={fx} y={fy} kerf={kerf} size={badge} />}
+                {showCuts && (
+                  <>
+                    <circle cx={x} cy={y} r={badge} />
+                    <text x={x} y={y} fontSize={badge * 1.2}>
+                      {i + 1}
+                    </text>
+                  </>
+                )}
               </g>
             )
           })}
