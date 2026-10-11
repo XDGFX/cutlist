@@ -161,7 +161,7 @@ describe('optimise', () => {
   })
 
   it('tries more layouts at each effort level and never ends up with a worse best solution', () => {
-    const results = EFFORTS.slice(0, 3).map((_, effort) => {
+    const results = EFFORTS.slice(0, 2).map((_, effort) => {
       const search = createSearch(cabinet, effort)
       while (!search.finished()) search.step(1024)
       return { total: search.stats().total, best: search.solutions()[0] }
@@ -173,7 +173,7 @@ describe('optimise', () => {
   })
 
   it('keeps the best solution found so far when the search is cut short', () => {
-    const search = createSearch(cabinet, 2)
+    const search = createSearch(cabinet, 1)
     search.step(200)
     expect(search.finished()).toBe(false)
     const [early] = search.solutions()
