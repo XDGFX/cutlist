@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   EFFORTS,
   optimise,
@@ -17,6 +17,23 @@ const mm = (n: number) => String(+n.toFixed(1))
 const m2 = (n: number) => (n / 1e6).toFixed(2)
 const count = (n: number) => n.toLocaleString('en-GB')
 const duration = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`)
+const two = (n: number) => String(n).padStart(2, '0')
+const total = (items: { qty: number }[]) => items.reduce((n, i) => n + i.qty, 0)
+const area = (items: { length: number; width: number; qty: number }[]) =>
+  `${m2(items.reduce((a, i) => a + i.length * i.width * i.qty, 0))} m²`
+
+/** Where the pointer is on a sheet drawing, in millimetres from its top left corner. */
+let pointer: { x: number; y: number } | null = null
+const watching = new Set<() => void>()
+// Kept outside React state so that moving the pointer redraws the readout and not the drawings.
+const setPointer = (to: typeof pointer) => {
+  pointer = to
+  watching.forEach((notify) => notify())
+}
+const watch = (notify: () => void) => {
+  watching.add(notify)
+  return () => void watching.delete(notify)
+}
 
 /** How long the inputs must rest before the URL is rewritten, in milliseconds. */
 const URL_DELAY = 300
@@ -143,14 +160,21 @@ export function App() {
 
   return (
     <div className="app">
+      <header className="bar masthead">
+        <Pointer axis="x" />
+        <h1>Cutlist</h1>
+        <Pointer axis="y" />
+      </header>
+
       <aside className="inputs">
-        <header>
-          <h1>Cutlist</h1>
-          <p>Guillotine cut layouts for sheet goods. All dimensions in millimetres.</p>
-        </header>
+        <p className="intro">Guillotine cut layouts for sheet goods. All dimensions in millimetres.</p>
 
         <section>
-          <h2>Stock sheets</h2>
+          <div className="bar">
+            <span title="Stock sheets on hand">{two(total(job.stock))}</span>
+            <h2>Stock sheets</h2>
+            <span title="Total area of stock">{area(job.stock)}</span>
+          </div>
           <table>
             <thead>
               <tr>
@@ -193,7 +217,11 @@ export function App() {
         </section>
 
         <section>
-          <h2>Parts</h2>
+          <div className="bar">
+            <span title="Parts to cut">{two(total(job.parts))}</span>
+            <h2>Parts</h2>
+            <span title="Total area of parts">{area(job.parts)}</span>
+          </div>
           <table>
             <thead>
               <tr>
@@ -262,7 +290,7 @@ export function App() {
           </label>
           <label className="effort">
             <span>
-              Effort: <strong>{EFFORTS[effort].name}</strong>
+              Effort <strong>{EFFORTS[effort].name}</strong>
             </span>
             <input
               type="range"
@@ -309,28 +337,52 @@ export function App() {
           <button onClick={copyLink}>{copied ? 'Link copied' : 'Copy link to this job'}</button>
           <button onClick={() => setJob(sampleJob())}>Load example</button>
         </section>
+
+        {runs.length > 0 && (
+          <nav aria-label="History">
+            <div className="bar">
+              <span>{two(runs.length)}</span>
+              <h2>History</h2>
+              <span />
+            </div>
+            <div className="stack">
+              {runs.map((r) => (
+                <div key={r.id} className="bar">
+                  <span>{time(r.at)}</span>
+                  <button
+                    className="pick"
+                    aria-current={r.id === run?.id || undefined}
+                    onClick={() => setState((s) => ({ ...s, activeRun: r.id }))}
+                  >
+                    {total(r.job.parts)} parts
+                  </button>
+                  <span>
+                    {EFFORTS[r.effort ?? 0].name}
+                    <button
+                      className="ghost"
+                      aria-label={`Delete run from ${time(r.at)}`}
+                      onClick={() => removeRun(r.id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </nav>
+        )}
       </aside>
 
       <main>
-        {runs.length > 0 && (
-          <nav className="chips" aria-label="History">
-            <h2>History</h2>
-            {runs.map((r) => (
-              <span key={r.id} className={r.id === run?.id ? 'chip active' : 'chip'}>
-                <button onClick={() => setState((s) => ({ ...s, activeRun: r.id }))}>
-                  {time(r.at)} · {r.job.parts.reduce((n, p) => n + p.qty, 0)} parts
-                  {r.effort ? ` · ${EFFORTS[r.effort].name}` : ''}
-                </button>
-                <button className="ghost" aria-label={`Delete run from ${time(r.at)}`} onClick={() => removeRun(r.id)}>
-                  ×
-                </button>
-              </span>
-            ))}
-          </nav>
-        )}
-
         {searching && (
           <section className="progress" aria-live="polite">
+            <div className="bar">
+              <span>{count(searching.stats.tried)}</span>
+              <span>
+                <span className="dot">●</span> Searching
+              </span>
+              <span>{count(searching.stats.total)}</span>
+            </div>
             <progress value={searching.stats.tried} max={searching.stats.total || 1} />
             <p>
               <strong>
@@ -370,16 +422,16 @@ export function App() {
                 {run.search.tried < run.search.total && ' · stopped early'}
               </p>
             )}
-            <nav className="chips" aria-label="Candidates">
-              <h2>Options</h2>
+            <nav className="stack" aria-label="Candidates">
               {solutions.map((s, i) => (
-                <span key={i} className={s === solution ? 'chip active' : 'chip'} title={s.strategy}>
-                  <button onClick={() => pick(i)}>
-                    {String.fromCharCode(65 + i)} · {s.stats.sheets} {s.stats.sheets === 1 ? 'sheet' : 'sheets'} ·{' '}
-                    {largestOffcut(s)} · {s.stats.cuts} cuts
-                    {s.stats.stacked ? ` · ⚠ ${s.stats.stacked} stacked` : ''}
+                <div key={i} className="bar" title={s.strategy}>
+                  <span>{String.fromCharCode(65 + i)}</span>
+                  <button className="pick" aria-current={s === solution || undefined} onClick={() => pick(i)}>
+                    {s.stats.sheets} {s.stats.sheets === 1 ? 'sheet' : 'sheets'}, {largestOffcut(s)}
+                    {s.stats.stacked ? `, ⚠ ${s.stats.stacked} stacked` : ''}
                   </button>
-                </span>
+                  <span>{s.stats.cuts} cuts</span>
+                </div>
               ))}
             </nav>
 
@@ -429,6 +481,16 @@ function Num({ value, onChange }: { value: number; onChange: (n: number) => void
     <td>
       <input type="number" min="0" value={value || ''} onChange={(e) => onChange(e.target.valueAsNumber || 0)} />
     </td>
+  )
+}
+
+function Pointer({ axis }: { axis: 'x' | 'y' }) {
+  const at = useSyncExternalStore(watch, () => pointer)
+  return (
+    <span title={`Pointer position on a sheet, in millimetres from its ${axis === 'x' ? 'left' : 'top'} edge`}>
+      {axis.toUpperCase()}
+      {at ? Math.round(at[axis]) : 0}
+    </span>
   )
 }
 
@@ -540,14 +602,28 @@ function Sheet({
 
   return (
     <figure className="sheet">
-      <figcaption>
-        <strong>
-          Sheet {index + 1}: {layout.stockName}
-        </strong>{' '}
-        {mm(layout.length)} × {mm(layout.width)} · {((used / (layout.length * layout.width)) * 100).toFixed(0)}% used ·{' '}
-        {layout.cuts} cuts
+      <figcaption className="bar">
+        <span title={`Sheet ${index + 1}`}>{two(index + 1)}</span>
+        <span>
+          {layout.stockName} {mm(layout.length)} × {mm(layout.width)}
+        </span>
+        <span>{((used / (layout.length * layout.width)) * 100).toFixed(0)}% used</span>
       </figcaption>
-      <svg viewBox={`0 0 ${layout.length} ${layout.width}`} role="img" aria-label={`Layout of sheet ${index + 1}`}>
+      <svg
+        viewBox={`0 0 ${layout.length} ${layout.width}`}
+        role="img"
+        aria-label={`Layout of sheet ${index + 1}`}
+        onPointerMove={(e) => {
+          const toSheet = e.currentTarget.getScreenCTM()?.inverse()
+          if (!toSheet) return
+          const at = new DOMPoint(e.clientX, e.clientY).matrixTransform(toSheet)
+          setPointer({
+            x: Math.min(Math.max(at.x, 0), layout.length),
+            y: Math.min(Math.max(at.y, 0), layout.width),
+          })
+        }}
+        onPointerLeave={() => setPointer(null)}
+      >
         <rect className="board" width={layout.length} height={layout.width} />
         {layout.offcuts.map((o, i) => (
           <g key={`o${i}`}>
