@@ -11,8 +11,6 @@ export interface Run {
   /** Index of the chosen candidate among the run's solutions. */
   pick: number
   effort?: number
-  /** Whether cuts were ordered to size one part at a time. */
-  safe?: boolean
   /** Missing on runs saved before solutions were stored, and on old runs shed to fit storage. */
   solutions?: Solution[]
   search?: SearchSummary
@@ -23,7 +21,6 @@ export interface Saved {
   runs: Run[]
   activeRun: string | null
   effort?: number
-  safe?: boolean
   showCuts?: boolean
   showFences?: boolean
 }

@@ -61,7 +61,6 @@ export function App() {
   const worker = useRef<Worker | null>(null)
   const { job, runs } = state
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
-  const safe = state.safe ?? true
   const showCuts = state.showCuts ?? true
   const showFences = state.showFences ?? true
 
@@ -111,16 +110,16 @@ export function App() {
       setSearching(null)
       setFinished((n) => n + 1)
       setState((s) => {
-        const result = { at: Date.now(), effort, safe, solutions: data.solutions, search: { ...data.stats, ms } }
+        const result = { at: Date.now(), effort, solutions: data.solutions, search: { ...data.stats, ms } }
         const latest = s.runs[0]
         // Repeating the latest run refreshes it rather than adding a duplicate to history.
-        if (latest && latest.effort === effort && latest.safe === safe && sameJob(latest.job, searched))
+        if (latest && latest.effort === effort && sameJob(latest.job, searched))
           return { ...s, runs: [{ ...latest, ...result }, ...s.runs.slice(1)], activeRun: latest.id }
         const next: Run = { id: newId(), job: searched, pick: 0, ...result }
         return { ...s, runs: [next, ...s.runs].slice(0, MAX_RUNS), activeRun: next.id }
       })
     }
-    w.postMessage({ type: 'start', job: searched, effort, safe } satisfies SearchRequest)
+    w.postMessage({ type: 'start', job: searched, effort } satisfies SearchRequest)
   }
 
   const stop = () => worker.current?.postMessage({ type: 'stop' } satisfies SearchRequest)
@@ -279,14 +278,6 @@ export function App() {
         </section>
 
         <section className="checks">
-          <label title="Order the cuts so each one sets a part's size straight off an edge, and prefer layouts where no part is left as whatever remains between other cuts. Errors then end up in the offcut instead of adding up on a part.">
-            <input
-              type="checkbox"
-              checked={safe}
-              onChange={(e) => setState((s) => ({ ...s, safe: e.target.checked }))}
-            />
-            Size one part per cut (avoid stacked tolerances)
-          </label>
           <label>
             <input
               type="checkbox"

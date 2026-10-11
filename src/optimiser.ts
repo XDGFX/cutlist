@@ -362,11 +362,11 @@ function worth(offcuts: Rect[]): number {
 /**
  * Works out guillotine cuts that free every part in a region, in the order to make them.
  *
- * In safe mode it takes cuts that size parts directly off an edge first and leaves freeing the
- * leftover until it can no longer turn a run of parts into an exact fit, so that accumulated
- * error ends up in the offcut. Otherwise it always frees the largest empty piece first.
+ * It takes cuts that size parts directly off an edge first and leaves freeing the leftover until
+ * it can no longer turn a run of parts into an exact fit, so that accumulated error ends up in the
+ * offcut.
  */
-function cutUp(parts: Placement[], region: Rect, kerf: number, safe: boolean, lookahead: { left: number }): Cutting {
+function cutUp(parts: Placement[], region: Rect, kerf: number, lookahead: { left: number }): Cutting {
   if (parts.length === 0)
     return { offcuts: region.w > EPS && region.h > EPS ? [region] : [], sequence: [], stacked: 0 }
 
@@ -407,7 +407,7 @@ function cutUp(parts: Placement[], region: Rect, kerf: number, safe: boolean, lo
       if (blocked) continue
 
       const empty = !before ? (at - start) * length : !after ? Math.max(0, end - at - kerf) * length : 0
-      const kind = !safe ? 0 : spanBefore && spanAfter ? 3 : spanBefore || spanAfter ? 0 : !before || !after ? 1 : 2
+      const kind = spanBefore && spanAfter ? 3 : spanBefore || spanAfter ? 0 : !before || !after ? 1 : 2
       const held = best[kind]
       if (!held || empty > held.empty || (empty === held.empty && length > held.length))
         best[kind] = { vertical, at, kind, empty, length }
@@ -444,8 +444,8 @@ function cutUp(parts: Placement[], region: Rect, kerf: number, safe: boolean, lo
       remainder: names(remainder),
     }
 
-    const a = cutUp(partsFirst, first, kerf, safe, lookahead)
-    const b = cutUp(partsSecond, second, kerf, safe, lookahead)
+    const a = cutUp(partsFirst, first, kerf, lookahead)
+    const b = cutUp(partsSecond, second, kerf, lookahead)
     return {
       offcuts: [...a.offcuts, ...b.offcuts],
       sequence: [cut, ...a.sequence, ...b.sequence],
@@ -470,9 +470,9 @@ function cutUp(parts: Placement[], region: Rect, kerf: number, safe: boolean, lo
   return next ? make(next) : { offcuts: [], sequence: [], stacked: 0 }
 }
 
-function finish(packing: Packing, kerf: number, safe: boolean): Solution {
+function finish(packing: Packing, kerf: number): Solution {
   const layouts: Layout[] = packing.sheets.map(({ stock, placements }) => {
-    const cutting = cutUp(placements, { x: 0, y: 0, w: stock.length, h: stock.width }, kerf, safe, { left: LOOKAHEAD })
+    const cutting = cutUp(placements, { x: 0, y: 0, w: stock.length, h: stock.width }, kerf, { left: LOOKAHEAD })
     return {
       stockId: stock.id,
       stockName: stock.name,
@@ -528,15 +528,15 @@ function mainOffcuts(s: Solution): string {
 }
 
 /**
- * Best first: fewest parts left over, least stock consumed, then (in safe mode) fewest remainder
- * dimensions, then the most reusable leftover.
+ * Best first: fewest parts left over, least stock consumed, then fewest remainder dimensions,
+ * then the most reusable leftover.
  */
-export function compareSolutions(a: Solution, b: Solution, safe = true): number {
+export function compareSolutions(a: Solution, b: Solution): number {
   return (
     a.stats.unplaced - b.stats.unplaced ||
     a.stats.stockArea - b.stats.stockArea ||
     a.stats.sheets - b.stats.sheets ||
-    (safe ? a.stats.stacked - b.stats.stacked : 0) ||
+    a.stats.stacked - b.stats.stacked ||
     consolidation(b) - consolidation(a) ||
     a.stats.cuts - b.stats.cuts
   )
@@ -552,8 +552,7 @@ interface Entry {
  * plans, then evolves the best plans found. Deterministic for a given job and effort, however
  * the tries are batched.
  */
-export function createSearch(job: Job, effort = 0, safe = true): Search {
-  const compare = (a: Solution, b: Solution) => compareSolutions(a, b, safe)
+export function createSearch(job: Job, effort = 0): Search {
   const rng = mulberry32(SEED)
   const pick = <T>(xs: readonly T[]) => xs[Math.floor(rng() * xs.length)]
 
@@ -592,7 +591,7 @@ export function createSearch(job: Job, effort = 0, safe = true): Search {
   let improvements = 0
   let lastImprovedAt = 0
 
-  const ranked = () => [...pool.values()].sort((a, b) => compare(a.solution, b.solution))
+  const ranked = () => [...pool.values()].sort((a, b) => compareSolutions(a.solution, b.solution))
 
   const randomPlan = (): Plan => {
     const sort = pick(SORTS)
@@ -639,13 +638,13 @@ export function createSearch(job: Job, effort = 0, safe = true): Search {
     )
       return
 
-    const solution = finish(packing, job.kerf, safe)
+    const solution = finish(packing, job.kerf)
     const key = mainOffcuts(solution)
     const held = pool.get(key)
-    if (held && compare(solution, held.solution) >= 0) return
+    if (held && compareSolutions(solution, held.solution) >= 0) return
     pool.set(key, { solution, plan })
     eliteStale = true
-    if (!best || compare(solution, best) < 0) {
+    if (!best || compareSolutions(solution, best) < 0) {
       best = solution
       improvements++
       lastImprovedAt = tried
@@ -681,8 +680,8 @@ export function createSearch(job: Job, effort = 0, safe = true): Search {
 }
 
 /** Distinct candidate solutions for a job, best first. */
-export function optimise(job: Job, effort = 0, safe = true): Solution[] {
-  const search = createSearch(job, effort, safe)
+export function optimise(job: Job, effort = 0): Solution[] {
+  const search = createSearch(job, effort)
   while (!search.finished()) search.step(1024)
   return search.solutions()
 }
