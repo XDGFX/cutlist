@@ -25,6 +25,7 @@ export interface Saved {
   effort?: number
   safe?: boolean
   showCuts?: boolean
+  showFences?: boolean
 }
 
 export const MAX_RUNS = 30
