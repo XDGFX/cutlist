@@ -24,6 +24,41 @@
   box-sizing: border-box;
 }
 
+/* Keeps a control focused while tabbing back up the page clear of the pinned masthead. */
+html {
+  scroll-padding-top: 4rem;
+}
+
+/* Read out but not shown. */
+.unseen {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Out of sight until Tab reaches it, then over the masthead's corner. */
+button.skip {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.75rem;
+  z-index: 2;
+  padding: 0.5rem 1rem;
+  background: var(--ink);
+  color: var(--bg);
+}
+
+button.skip:not(:focus) {
+  clip-path: inset(50%);
+}
+
+main:focus {
+  outline: 0;
+}
+
 ::selection {
   background: var(--ink);
   color: var(--bg);
@@ -79,7 +114,8 @@ body {
 }
 
 h1,
-h2 {
+h2,
+h3 {
   margin: 0;
   font: inherit;
 }
@@ -250,6 +286,24 @@ th:nth-child(5) {
   width: 10%;
 }
 
+/* Without names the sizes take their room. */
+.unnamed th:nth-child(1),
+.unnamed th:nth-child(2) {
+  width: 31%;
+}
+
+.unnamed th:nth-child(3) {
+  width: 16%;
+}
+
+.unnamed th:nth-child(4) {
+  width: 12%;
+}
+
+.unnamed th:nth-child(5) {
+  width: auto;
+}
+
 tbody tr {
   border-bottom: 1px solid var(--faint);
 }
@@ -359,9 +413,19 @@ input[type='checkbox']:checked {
 input[type='checkbox']:focus-visible,
 input[type='range']:focus-visible,
 button:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+.letters input:focus-visible + span,
+.sequence li:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
+}
+
+/* Forced colours drop the shadow that marks a focused field. */
+@media (forced-colors: active) {
+  input:not([type='checkbox'], [type='range']):focus-visible {
+    outline: 2px solid;
+    outline-offset: 2px;
+  }
 }
 
 button {
@@ -396,8 +460,38 @@ button.ghost {
   padding: 0.3rem 0 0.3rem 0.5rem;
 }
 
-button:disabled {
+button[aria-disabled='true'] {
   cursor: progress;
+}
+
+/* Calculate, with Stop beside it while a search runs. */
+.go {
+  display: flex;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.go .primary {
+  flex: 1;
+}
+
+.hint {
+  margin-left: 1em;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+/* The mono face has no command symbol, and the fallback draws it small. */
+.cmd {
+  font: 1.35em/1 system-ui;
+  vertical-align: -0.08em;
+}
+
+/* A shortcut is no use where there is no keyboard. */
+@media (hover: none) {
+  .hint {
+    display: none;
+  }
 }
 
 .row {
@@ -505,6 +599,25 @@ select:focus-visible {
 .stack {
   display: grid;
   gap: 0.27rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.27rem 1.5em;
+  margin: 0;
+}
+
+.keys dt {
+  text-transform: uppercase;
+}
+
+.keys dd {
+  margin: 0;
+  color: var(--muted);
 }
 
 .stack .bar {
@@ -531,18 +644,34 @@ select:focus-visible {
   gap: 0.15rem;
 }
 
-.letters button {
-  min-width: 1.6em;
-  padding: 0.15em 0;
-  color: var(--ink);
-  font: inherit;
+.letters label {
+  position: relative;
+  cursor: pointer;
 }
 
-.letters button:hover {
+/* The radio is there for the keyboard; its letter is what shows. */
+.letters input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.letters span {
+  display: block;
+  min-width: 1.6em;
+  padding: 0.15em 0;
+}
+
+.letters label:hover span {
   background: var(--offcut);
 }
 
-.letters button[aria-current] {
+.letters input:checked + span {
   background: var(--ink);
   color: var(--bg);
 }
@@ -911,7 +1040,7 @@ text {
   .masthead,
   .colophon,
   .inputs,
-  .letters button:not([aria-current]),
+  .letters label:not(:has(:checked)),
   .notice:not(.warn) {
     display: none;
   }

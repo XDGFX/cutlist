@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react'
 import {
   EFFORTS,
   optimise,
@@ -11,6 +20,7 @@ import {
   type StockSheet,
 } from './optimiser'
 import { flourishPage } from './flourish'
+import { asksToCalculate, enterTo, neighbour, stepTo } from './keys'
 import type { SearchRequest, Update } from './search.worker'
 import {
   jobFromHash,
@@ -108,6 +118,41 @@ const figures = (s: Solution) =>
   (s.stats.stacked ? `, ⚠ ${s.stats.stacked} stacked` : '')
 const moves = (s: Solution) =>
   `${s.stats.cuts} cuts` + (s.stats.fenceMoves === undefined ? '' : `, ${s.stats.fenceMoves} fence moves`)
+const short = (s: Solution) => s.unplaced.map((u) => `${u.qty} × ${u.name}`).join(', ')
+
+/** What a finished search is announced as to a screen reader. */
+function announce(solutions: Solution[], stats: SearchStats): string {
+  const [best] = solutions
+  if (!best) return 'Search finished: no candidates.'
+  return (
+    `Search finished: ${solutions.length} ${solutions.length === 1 ? 'candidate' : 'candidates'}. Best: ${figures(best)}.` +
+    (stats.tried < stats.total ? ' Stopped early.' : '') +
+    (best.unplaced.length ? ` Not enough stock for: ${short(best)}.` : '')
+  )
+}
+
+/** What a row is called aloud: its name, or its place in the table when it has none. */
+const called = (name: string, kind: string, i: number) => name.trim() || `${kind} ${i + 1}`
+
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform)
+
+/** The keys that calculate, as this platform writes them. */
+const CalculateKeys = () =>
+  MAC ? (
+    <>
+      <span className="cmd">⌘</span> Enter
+    </>
+  ) : (
+    'Ctrl+Enter'
+  )
+
+const cell = (row: string, col: string) => `[data-row="${row}"] [data-col="${col}"]`
+
+function focusOn(selector: string, select = false) {
+  const control = document.querySelector<HTMLElement>(selector)
+  control?.focus()
+  if (select && control instanceof HTMLInputElement) control.select()
+}
 
 const solved = new Map<string, Solution[]>()
 
@@ -134,6 +179,18 @@ export function App() {
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
   const showCuts = state.showCuts ?? true
   const partFill = state.partFill ?? 'mono'
+  const showNames = state.showNames ?? true
+  /** The field a new row is entered from. */
+  const firstCol = showNames ? 'name' : 'length'
+  const [status, setStatus] = useState('')
+  /** A control to focus once the next render has drawn it; `lost` only if focus went with a removed control. */
+  const wanted = useRef<{ selector: string; select?: boolean; lost?: boolean } | null>(null)
+  // A layout effect, because a passive one left over from the render before would run too early.
+  useLayoutEffect(() => {
+    const want = wanted.current
+    wanted.current = null
+    if (want && (!want.lost || document.activeElement === document.body)) focusOn(want.selector, want.select)
+  })
 
   useEffect(() => save(state), [state])
   // Keeps the address bar a link to the job as it stands. Debounced because browsers limit how
@@ -162,6 +219,44 @@ export function App() {
   const setStock = (id: string, patch: Partial<StockSheet>) =>
     setJob({ stock: job.stock.map((s) => (s.id === id ? { ...s, ...patch } : s)) })
 
+  const addStock = () => {
+    const id = newId()
+    setJob({ stock: [...job.stock, { id, name: 'Sheet', length: 2440, width: 1220, qty: 1 }] })
+    wanted.current = { selector: cell(id, firstCol), select: true }
+  }
+  const addPart = () => {
+    const id = newId()
+    setJob({
+      parts: [...job.parts, { id, name: `Part ${job.parts.length + 1}`, length: 0, width: 0, qty: 1, canRotate: true }],
+    })
+    wanted.current = { selector: cell(id, firstCol), select: true }
+  }
+  const removeRow = (list: 'stock' | 'parts', id: string) => {
+    const next = neighbour(
+      job[list].map((r) => r.id),
+      id,
+    )
+    wanted.current = { selector: next ? cell(next, 'remove') : `[data-add="${list}"]` }
+    setJob(
+      list === 'stock'
+        ? { stock: job.stock.filter((s) => s.id !== id) }
+        : { parts: job.parts.filter((p) => p.id !== id) },
+    )
+  }
+  /** Enter in a table's field moves down its column, and adds a row from the last one. */
+  const onEnter = (list: 'stock' | 'parts') => (e: ReactKeyboardEvent) => {
+    const field = e.target as HTMLElement
+    const col = field.dataset.col
+    const row = field.closest<HTMLElement>('[data-row]')?.dataset.row
+    if (!col || col === 'remove' || !row) return
+    const ids = job[list].map((r) => r.id)
+    const to = enterTo(e.nativeEvent, ids.indexOf(row), ids.length)
+    if (to === null) return
+    e.preventDefault()
+    if (to === 'add') (list === 'stock' ? addStock : addPart)()
+    else focusOn(cell(ids[to], col), true)
+  }
+
   const calculate = () => {
     if (worker.current) return
     const searched = structuredClone(job)
@@ -169,6 +264,7 @@ export function App() {
     const w = new Worker(new URL('./search.worker.ts', import.meta.url), { type: 'module' })
     worker.current = w
     setSearching({ stats: { tried: 0, total: 0, improvements: 0, lastImprovedAt: 0 }, best: null, ms: 0 })
+    setStatus('Searching')
 
     w.onmessage = ({ data }: MessageEvent<Update>) => {
       const ms = performance.now() - started
@@ -179,6 +275,9 @@ export function App() {
       w.terminate()
       worker.current = null
       setSearching(null)
+      setStatus(announce(data.solutions, data.stats))
+      // The buttons that stop or repeat a search can go when it ends, and focus must not go with them.
+      if (document.activeElement?.matches('[data-search]')) wanted.current = { selector: '#calculate', lost: true }
       setState((s) => {
         const result = { at: Date.now(), effort, solutions: data.solutions, search: { ...data.stats, ms } }
         const latest = s.runs[0]
@@ -194,37 +293,67 @@ export function App() {
 
   const stop = () => worker.current?.postMessage({ type: 'stop' } satisfies SearchRequest)
 
+  // Ctrl or Cmd with Enter calculates from anywhere, fields included.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!asksToCalculate(e)) return
+      e.preventDefault()
+      calculate()
+    }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  })
+
   const pick = (index: number) =>
     setState((s) => ({ ...s, runs: s.runs.map((r) => (r.id === s.activeRun ? { ...r, pick: index } : r)) }))
+  /** Home and End choose the first and last candidate; the arrows are the radio group's own. */
+  const onCandidateKey = (e: ReactKeyboardEvent<HTMLElement>) => {
+    const to = e.key === 'Home' || e.key === 'End' ? stepTo(e.key, 0, solutions.length) : null
+    if (to === null) return
+    e.preventDefault()
+    pick(to)
+    e.currentTarget.querySelectorAll('input')[to]?.focus()
+  }
 
-  const removeRun = (id: string) =>
+  const removeRun = (id: string) => {
+    const next = neighbour(
+      runs.map((r) => r.id),
+      id,
+    )
+    wanted.current = { selector: next ? `[data-run="${next}"] .ghost` : '#calculate' }
     setState((s) => {
       const left = s.runs.filter((r) => r.id !== id)
       return { ...s, runs: left, activeRun: s.activeRun === id ? (left[0]?.id ?? null) : s.activeRun }
     })
+  }
 
   const copyLink = async () => {
     history.replaceState(null, '', jobToHash(job))
     await navigator.clipboard?.writeText(location.href).catch(() => {})
     setCopied(true)
+    setStatus('Link copied')
     setTimeout(() => setCopied(false), 1500)
   }
 
   return (
     <div className="app">
+      {/* Not a link to #results, because the address's fragment holds the job. */}
+      <button className="skip" onClick={() => focusOn('#results')}>
+        Skip to results
+      </button>
       <header className="bar masthead">
         <Pointer axis="x" />
         <Title />
         <Pointer axis="y" />
       </header>
 
-      <aside className="inputs">
+      <aside className="inputs" aria-label="Job">
         <section>
-          <h2>Stock sheets</h2>
-          <table>
+          <h2 id="stock">Stock sheets</h2>
+          <table className={showNames ? undefined : 'unnamed'} aria-labelledby="stock">
             <thead>
               <tr>
-                <th>Name</th>
+                {showNames && <th>Name</th>}
                 <th>Length</th>
                 <th>Width</th>
                 <th>Qty</th>
@@ -232,91 +361,104 @@ export function App() {
                 <th />
               </tr>
             </thead>
-            <tbody>
-              {job.stock.map((s) => (
-                <tr key={s.id}>
-                  <td>
-                    <input value={s.name} onChange={(e) => setStock(s.id, { name: e.target.value })} />
-                  </td>
-                  <Num value={s.length} onChange={(length) => setStock(s.id, { length })} />
-                  <Num value={s.width} onChange={(width) => setStock(s.id, { width })} />
-                  <Num value={s.qty} onChange={(qty) => setStock(s.id, { qty })} />
-                  <td />
-                  <td>
-                    <button
-                      className="ghost"
-                      aria-label={`Remove ${s.name}`}
-                      onClick={() => setJob({ stock: job.stock.filter((x) => x.id !== s.id) })}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              ))}
+            <tbody onKeyDown={onEnter('stock')}>
+              {job.stock.map((s, i) => {
+                const name = called(s.name, 'Stock sheet', i)
+                return (
+                  <tr key={s.id} data-row={s.id}>
+                    {showNames && (
+                      <td>
+                        <input
+                          data-col="name"
+                          aria-label={`Stock sheet ${i + 1} name`}
+                          value={s.name}
+                          onChange={(e) => setStock(s.id, { name: e.target.value })}
+                        />
+                      </td>
+                    )}
+                    <Num col="length" label={`${name} length`} value={s.length} onChange={(length) => setStock(s.id, { length })} />
+                    <Num col="width" label={`${name} width`} value={s.width} onChange={(width) => setStock(s.id, { width })} />
+                    <Num col="qty" label={`${name} quantity`} value={s.qty} onChange={(qty) => setStock(s.id, { qty })} />
+                    <td />
+                    <td>
+                      <button
+                        className="ghost"
+                        data-col="remove"
+                        aria-label={`Remove ${name}`}
+                        onClick={() => removeRow('stock', s.id)}
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
-          <button
-            onClick={() =>
-              setJob({ stock: [...job.stock, { id: newId(), name: 'Sheet', length: 2440, width: 1220, qty: 1 }] })
-            }
-          >
+          <button data-add="stock" onClick={addStock}>
             + Stock sheet
           </button>
         </section>
 
         <section>
-          <h2>Parts</h2>
-          <table>
+          <h2 id="parts">Parts</h2>
+          <table className={showNames ? undefined : 'unnamed'} aria-labelledby="parts">
             <thead>
               <tr>
-                <th>Name</th>
+                {showNames && <th>Name</th>}
                 <th>Length</th>
                 <th>Width</th>
                 <th>Qty</th>
-                <th title="Allow the part to be turned 90°. Untick to keep the grain along the sheet's length.">Rotate</th>
+                <th title={ROTATE_HELP}>Rotate</th>
                 <th />
               </tr>
             </thead>
-            <tbody>
-              {job.parts.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <input value={p.name} onChange={(e) => setPart(p.id, { name: e.target.value })} />
-                  </td>
-                  <Num value={p.length} onChange={(length) => setPart(p.id, { length })} />
-                  <Num value={p.width} onChange={(width) => setPart(p.id, { width })} />
-                  <Num value={p.qty} onChange={(qty) => setPart(p.id, { qty })} />
-                  <td>
-                    <input
-                      type="checkbox"
-                      aria-label={`${p.name} can rotate`}
-                      checked={p.canRotate}
-                      onChange={(e) => setPart(p.id, { canRotate: e.target.checked })}
-                    />
-                  </td>
-                  <td>
-                    <button
-                      className="ghost"
-                      aria-label={`Remove ${p.name}`}
-                      onClick={() => setJob({ parts: job.parts.filter((x) => x.id !== p.id) })}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              ))}
+            <tbody onKeyDown={onEnter('parts')}>
+              {job.parts.map((p, i) => {
+                const name = called(p.name, 'Part', i)
+                return (
+                  <tr key={p.id} data-row={p.id}>
+                    {showNames && (
+                      <td>
+                        <input
+                          data-col="name"
+                          aria-label={`Part ${i + 1} name`}
+                          value={p.name}
+                          onChange={(e) => setPart(p.id, { name: e.target.value })}
+                        />
+                      </td>
+                    )}
+                    <Num col="length" label={`${name} length`} value={p.length} onChange={(length) => setPart(p.id, { length })} />
+                    <Num col="width" label={`${name} width`} value={p.width} onChange={(width) => setPart(p.id, { width })} />
+                    <Num col="qty" label={`${name} quantity`} value={p.qty} onChange={(qty) => setPart(p.id, { qty })} />
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`${name} can rotate`}
+                        aria-describedby="rotate-help"
+                        checked={p.canRotate}
+                        onChange={(e) => setPart(p.id, { canRotate: e.target.checked })}
+                      />
+                    </td>
+                    <td>
+                      <button
+                        className="ghost"
+                        data-col="remove"
+                        aria-label={`Remove ${name}`}
+                        onClick={() => removeRow('parts', p.id)}
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
-          <button
-            onClick={() =>
-              setJob({
-                parts: [
-                  ...job.parts,
-                  { id: newId(), name: `Part ${job.parts.length + 1}`, length: 0, width: 0, qty: 1, canRotate: true },
-                ],
-              })
-            }
-          >
+          <p id="rotate-help" className="unseen">
+            {ROTATE_HELP}
+          </p>
+          <button data-add="parts" onClick={addPart}>
             + Part
           </button>
         </section>
@@ -342,18 +484,42 @@ export function App() {
               max={EFFORTS.length - 1}
               step="1"
               value={effort}
+              aria-valuetext={EFFORTS[effort].name}
               onChange={(e) => setState((s) => ({ ...s, effort: e.target.valueAsNumber }))}
             />
           </label>
-          <button className="primary" onClick={calculate} disabled={searching !== null}>
-            {searching ? 'Searching…' : 'Calculate'}
-          </button>
+          <div className="go">
+            {/* Not disabled while searching, so that it keeps the focus it was pressed with. */}
+            <button
+              id="calculate"
+              className="primary"
+              onClick={calculate}
+              aria-disabled={searching !== null}
+              aria-keyshortcuts="Control+Enter Meta+Enter"
+            >
+              {searching ? 'Searching…' : 'Calculate'}
+              {!searching && <span className="hint"><CalculateKeys /></span>}
+            </button>
+            {searching && (
+              <button data-search onClick={stop}>
+                Stop
+              </button>
+            )}
+          </div>
         </section>
 
         <section className="extras">
         <details className="fold">
-          <summary>Drawing options</summary>
+          <summary>Options</summary>
           <section className="checks">
+          <label>
+            <input
+              type="checkbox"
+              checked={showNames}
+              onChange={(e) => setState((s) => ({ ...s, showNames: e.target.checked }))}
+            />
+            Name the stock sheets and parts
+          </label>
           <label>
             <input
               type="checkbox"
@@ -379,9 +545,9 @@ export function App() {
         {runs.length > 0 && (
           <details className="fold">
             <summary>History ({runs.length})</summary>
-            <nav className="stack" aria-label="History">
+            <ul className="stack" aria-label="History">
               {runs.map((r) => (
-                <div key={r.id} className="bar">
+                <li key={r.id} className="bar" data-run={r.id}>
                   <span>{time(r.at)}</span>
                   <button
                     className="pick"
@@ -400,11 +566,29 @@ export function App() {
                       ×
                     </button>
                   </span>
-                </div>
+                </li>
               ))}
-            </nav>
+            </ul>
           </details>
         )}
+
+        <details className="fold">
+          <summary>Keys</summary>
+          <dl className="keys">
+            <dt>Enter</dt>
+            <dd>Next row, or a new row from the last</dd>
+            <dt>Shift+Enter</dt>
+            <dd>Previous row</dd>
+            <dt><CalculateKeys /></dt>
+            <dd>Calculate</dd>
+            <dt>← →</dt>
+            <dd>Previous or next candidate, from the candidates</dd>
+            <dt>Home End</dt>
+            <dd>First or last candidate, from the candidates</dd>
+            <dt>↑ ↓</dt>
+            <dd>Step through an open cutting order</dd>
+          </dl>
+        </details>
 
           <div className="row">
             <button onClick={copyLink}>{copied ? 'Link copied' : 'Copy link to this job'}</button>
@@ -413,9 +597,14 @@ export function App() {
         </section>
       </aside>
 
-      <main>
+      <main id="results" tabIndex={-1}>
+        <h2 className="unseen">Results</h2>
+        {/* Always here, because a screen reader only announces changes to a region it has already met. */}
+        <p role="status" className="unseen">
+          {status}
+        </p>
         {searching && (
-          <section className="progress" aria-live="polite">
+          <section className="progress">
             <div className="bar">
               <span>{count(searching.stats.tried)}</span>
               <span>
@@ -423,7 +612,7 @@ export function App() {
               </span>
               <span>{count(searching.stats.total)}</span>
             </div>
-            <progress value={searching.stats.tried} max={searching.stats.total || 1} />
+            <progress aria-label="Layouts tried" value={searching.stats.tried} max={searching.stats.total || 1} />
             <p>
               <strong>
                 {count(searching.stats.tried)} of {count(searching.stats.total)}
@@ -438,7 +627,9 @@ export function App() {
                 {largestOffcut(searching.best)} · {searching.best.stats.cuts} cuts
               </p>
             )}
-            <button onClick={stop}>Stop and keep the best so far</button>
+            <button data-search onClick={stop}>
+              Stop and keep the best so far
+            </button>
           </section>
         )}
 
@@ -447,7 +638,9 @@ export function App() {
         {run && stale && (
           <p className="notice">
             The inputs have changed since this run.{' '}
-            <button onClick={calculate}>Recalculate</button>{' '}
+            <button data-search onClick={calculate}>
+              Recalculate
+            </button>{' '}
             <button onClick={() => setJob(structuredClone(run.job))}>Restore this run's inputs</button>
           </p>
         )}
@@ -455,18 +648,24 @@ export function App() {
         {run && solution && (
           <>
             <div className="bar chosen">
-              <nav className="letters" aria-label="Candidates">
-                {solutions.map((s, i) => (
-                  <button
-                    key={i}
-                    aria-current={s === solution || undefined}
-                    title={`${figures(s)}, ${moves(s)}. ${s.strategy}`}
-                    onClick={() => pick(i)}
-                  >
-                    {String.fromCharCode(65 + i)}
-                  </button>
-                ))}
-              </nav>
+              {/* Radios, so that the arrow keys choose a candidate and the group is a single tab stop. */}
+              <div className="letters" role="radiogroup" aria-label="Candidates" onKeyDown={onCandidateKey}>
+                {solutions.map((s, i) => {
+                  const letter = String.fromCharCode(65 + i)
+                  return (
+                    <label key={i} title={`${figures(s)}, ${moves(s)}. ${s.strategy}`}>
+                      <input
+                        type="radio"
+                        name="candidate"
+                        aria-label={`${letter}: ${figures(s)}, ${moves(s)}`}
+                        checked={s === solution}
+                        onChange={() => pick(i)}
+                      />
+                      <span>{letter}</span>
+                    </label>
+                  )
+                })}
+              </div>
               <span>{figures(solution)}</span>
               <span>{moves(solution)}</span>
             </div>
@@ -480,7 +679,7 @@ export function App() {
 
             {solution.unplaced.length > 0 && (
               <p className="notice warn">
-                Not enough stock for: {solution.unplaced.map((u) => `${u.qty} × ${u.name}`).join(', ')}.
+                Not enough stock for: {short(solution)}.
               </p>
             )}
 
@@ -556,10 +755,19 @@ function SouthernCross() {
   )
 }
 
-function Num({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+const ROTATE_HELP = "Allow the part to be turned 90°. Untick to keep the grain along the sheet's length."
+
+function Num({ col, label, value, onChange }: { col: string; label: string; value: number; onChange: (n: number) => void }) {
   return (
     <td>
-      <input type="number" min="0" value={value || ''} onChange={(e) => onChange(e.target.valueAsNumber || 0)} />
+      <input
+        type="number"
+        min="0"
+        data-col={col}
+        aria-label={label}
+        value={value || ''}
+        onChange={(e) => onChange(e.target.valueAsNumber || 0)}
+      />
     </td>
   )
 }
@@ -754,6 +962,15 @@ function Sheet({
     // A tap has no hover to end, so it toggles.
     onClick: () => setHot((was) => (was === i ? null : i)),
   })
+  // The cutting order is one tab stop, and this is the cut in it that Tab lands on.
+  const [stop, setStop] = useState(0)
+  const onCutKey = (e: ReactKeyboardEvent<HTMLLIElement>, i: number) => {
+    const to = stepTo(e.key, i, sequence.length)
+    if (to === null) return
+    e.preventDefault()
+    const cuts = e.currentTarget.parentElement?.children
+    if (cuts?.[to] instanceof HTMLElement) cuts[to].focus()
+  }
   const order = useRef<HTMLDetailsElement>(null)
   // The cutting order is folded on screen but is wanted on paper.
   useEffect(() => {
@@ -819,7 +1036,7 @@ function Sheet({
   return (
     <figure className="sheet">
       <figcaption className="bar">
-        <span>Sheet {index + 1}</span>
+        <h3>Sheet {index + 1}</h3>
         <span>
           {layout.stockName} {mm(layout.length)} × {mm(layout.width)}
         </span>
@@ -932,6 +1149,14 @@ function Sheet({
                 key={i}
                 className={`${c.remainder.length ? 'stacked' : ''}${hot === i ? ' hot' : ''}`}
                 {...heat(i)}
+                tabIndex={i === Math.min(stop, sequence.length - 1) ? 0 : -1}
+                onKeyDown={(e) => onCutKey(e, i)}
+                // Only focus from the keyboard marks the cut, so that a click still toggles it.
+                onFocus={(e) => {
+                  setStop(i)
+                  if (e.currentTarget.matches(':focus-visible')) setHot(i)
+                }}
+                onBlur={() => setHot((was) => (was === i ? null : was))}
               >
                 {c.rip ? 'Rip' : 'Crosscut'} at <strong>{mm(c.fence)}</strong> from the{' '}
                 {c.rip ? (c.far ? 'bottom' : 'top') : c.far ? 'right' : 'left'}
