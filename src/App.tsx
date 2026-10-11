@@ -9,6 +9,19 @@ const time = (at: number) =>
 
 const sameJob = (a: Job, b: Job) => JSON.stringify(a) === JSON.stringify(b)
 
+function largestOffcut(s: Solution): string {
+  const [largest] = s.layouts.flatMap((l) => l.offcuts).sort((a, b) => b.w * b.h - a.w * a.h)
+  return largest ? `${largest.w.toFixed(0)} × ${largest.h.toFixed(0)} offcut` : 'no offcut'
+}
+
+const solved = new Map<string, Solution[]>()
+
+/** A run's job never changes, so its solutions are worked out once per visit. */
+function solve(run: Run): Solution[] {
+  if (!solved.has(run.id)) solved.set(run.id, optimise(run.job))
+  return solved.get(run.id)!
+}
+
 function initial(): Saved {
   const saved = load()
   // A link to the job already open is a reload, not an incoming share.
@@ -24,7 +37,7 @@ export function App() {
   useEffect(() => save(state), [state])
 
   const run = runs.find((r) => r.id === state.activeRun) ?? null
-  const solutions = useMemo(() => (run ? optimise(run.job) : []), [run?.job])
+  const solutions = useMemo(() => (run ? solve(run) : []), [run?.job])
   const solution = solutions[Math.min(run?.pick ?? 0, solutions.length - 1)] as Solution | undefined
   const stale = run !== null && !sameJob(run.job, job)
 
@@ -224,7 +237,7 @@ export function App() {
                 <span key={i} className={s === solution ? 'chip active' : 'chip'} title={s.strategy}>
                   <button onClick={() => pick(i)}>
                     {String.fromCharCode(65 + i)} · {s.stats.sheets} {s.stats.sheets === 1 ? 'sheet' : 'sheets'} ·{' '}
-                    {s.stats.wastePct.toFixed(0)}% waste · {s.stats.cuts} cuts
+                    {largestOffcut(s)} · {s.stats.cuts} cuts
                   </button>
                 </span>
               ))}
@@ -274,16 +287,32 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function Sheet({ layout, index, partIds }: { layout: Layout; index: number; partIds: string[] }) {
   const maxFont = layout.length / 45
-  const minFont = layout.length / 140
+  const minFont = layout.length / 170
   const used = layout.placements.reduce((a, p) => a + p.w * p.h, 0)
+  const colour = (partId: string) => `hsl(${(partIds.indexOf(partId) * 137.5 + 28) % 360} 60% 74%)`
 
-  const label = (lines: string[], x: number, y: number, w: number, h: number, className: string) => {
-    const longest = Math.max(...lines.map((l) => l.length))
-    const fit = (across: number, down: number) =>
-      Math.min(maxFont, (across * 0.92) / (longest * 0.6), (down * 0.8) / (lines.length * 1.2))
-    // Tall, narrow pieces read better with the text turned to run up them.
-    const turned = fit(h, w) > fit(w, h)
-    const size = turned ? fit(h, w) : fit(w, h)
+  const key = new Map<string, { partId: string; name: string; size: string; count: number }>()
+  for (const p of layout.placements) {
+    const size = `${mm(Math.max(p.w, p.h))} × ${mm(Math.min(p.w, p.h))}`
+    const entry = key.get(p.partId) ?? { partId: p.partId, name: p.name, size, count: 0 }
+    entry.count++
+    key.set(p.partId, entry)
+  }
+
+  const label = (wanted: string[], x: number, y: number, w: number, h: number, className: string) => {
+    const sizeOf = (lines: string[], across: number, down: number) =>
+      Math.min(
+        maxFont,
+        (across * 0.92) / (Math.max(...lines.map((l) => l.length)) * 0.6),
+        (down * 0.8) / (lines.length * 1.2),
+      )
+    // Narrow pieces get everything on one line, and tall ones get the text turned to run up them.
+    const [size, lines, turned] = [wanted, [wanted.join(' ')]]
+      .flatMap((ls) => [
+        [sizeOf(ls, w, h), ls, false] as const,
+        [sizeOf(ls, h, w), ls, true] as const,
+      ])
+      .reduce((best, option) => (option[0] > best[0] ? option : best))
     if (size < minFont) return null
     const [cx, cy] = [x + w / 2, y + h / 2]
     const top = cy - ((lines.length - 1) * size * 1.2) / 2
@@ -317,18 +346,20 @@ function Sheet({ layout, index, partIds }: { layout: Layout; index: number; part
         ))}
         {layout.placements.map((p, i) => (
           <g key={`p${i}`}>
-            <rect
-              className="part"
-              x={p.x}
-              y={p.y}
-              width={p.w}
-              height={p.h}
-              fill={`hsl(${(partIds.indexOf(p.partId) * 47 + 28) % 360} 60% 74%)`}
-            />
+            <title>{`${p.name}: ${mm(p.w)} × ${mm(p.h)}`}</title>
+            <rect className="part" x={p.x} y={p.y} width={p.w} height={p.h} fill={colour(p.partId)} />
             {label([p.name, `${mm(p.w)} × ${mm(p.h)}`], p.x, p.y, p.w, p.h, 'part-label')}
           </g>
         ))}
       </svg>
+      <ul className="key">
+        {[...key.values()].map((k) => (
+          <li key={k.partId}>
+            <span className="swatch" style={{ background: colour(k.partId) }} />
+            {k.count} × {k.name} <span className="size">{k.size}</span>
+          </li>
+        ))}
+      </ul>
       {layout.offcuts.length > 0 && (
         <p className="offcuts">Offcuts: {layout.offcuts.map((o) => `${mm(o.w)} × ${mm(o.h)}`).join(', ')}</p>
       )}
