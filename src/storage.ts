@@ -17,7 +17,8 @@ export interface Run {
 }
 
 /** How the drawing tells parts apart: not at all, by a black pattern, or by a coloured border. */
-export type PartFill = 'none' | 'mono' | 'colour'
+export const FILLS = ['none', 'mono', 'colour'] as const
+export type PartFill = (typeof FILLS)[number]
 
 export interface Saved {
   job: Job

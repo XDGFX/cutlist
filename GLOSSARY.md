@@ -20,8 +20,9 @@
   other cuts. Cutting errors add up on it. A layout's remainders are counted as its stacked sizes.
 - **Layout**: the parts placed on one stock sheet.
 - **Label**: a part's name and size written on it in a layout, at the size of the sheet's heading.
+  Where names are hidden it is the size alone, and a part is small only if it cannot hold that.
 - **Run**: the same small part repeated side by side or end to end in a layout. It takes one label
-  for the lot, such as "5 × Block".
+  for the lot, such as "5 × Block", or "5 off" where names are hidden.
 - **Leader**: a line from a part too small to hold its label out to the label in the margin below
   or above the sheet. Identical parts share one label.
 - **Detail**: an enlarged view of a crowded region of a layout, drawn below the sheet at a scale

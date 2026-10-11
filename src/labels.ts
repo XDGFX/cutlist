@@ -2,7 +2,13 @@ import type { Layout, Rect } from './optimiser'
 
 export const mm = (n: number) => String(+n.toFixed(1))
 export const dims = (r: Rect) => `${mm(r.w)} × ${mm(r.h)}`
-export const partLabel = (p: { name: string } & Rect) => [p.name, dims(p)]
+/** A part's label, which is its size alone where names are hidden. */
+export const partLabel = (p: { name: string } & Rect, named = true) => (named ? [p.name, dims(p)] : [dims(p)])
+/** The label for `count` of the same part. */
+export const countLabel = (count: number, p: { name: string } & Rect, named = true) => [
+  named ? `${count} × ${p.name}` : `${count} off`,
+  dims(p),
+]
 
 /** The width of a character, the height of a line and the clearance round a label, in font sizes. */
 export const CHAR = 0.6
@@ -51,6 +57,10 @@ export const labelRoom = (u: Run, font: number): Rect => {
   const s = spare(u, font)
   return { x: u.box.x + s.w, y: u.box.y + s.h, w: u.box.w - s.w, h: u.box.h - s.h }
 }
+
+/** Whether every part of a run holds its own label at this font size, as it may in a detail, which is wanted over one for the lot. */
+export const eachHolds = (u: Run, parts: ({ name: string } & Rect)[], font: number, named = true) =>
+  u.parts.every((i) => fit(partLabel(parts[i], named), parts[i], font))
 
 /** The least enlargement at which a run holds its label. */
 const enlargement = (u: Run, font: number) => {
@@ -162,12 +172,12 @@ export interface Labels {
 /**
  * Decides how each part of a layout gets its label when text is `text` pixels high and the sheet is
  * drawn at `px` millimetres to the pixel. A part that cannot hold its label gets a leader to the
- * margin, and a crowd of them gets a detail.
+ * margin, and a crowd of them gets a detail. Labels leave out the name unless `named`.
  */
-export function planLabels(layout: Layout, px: number, text: number, kerf: number): Labels {
+export function planLabels(layout: Layout, px: number, text: number, kerf: number, named = true): Labels {
   const font = text * px
   const parts = layout.placements
-  const small = parts.flatMap((p, i) => (fit(partLabel(p), p, font) ? [] : [i]))
+  const small = parts.flatMap((p, i) => (fit(partLabel(p, named), p, font) ? [] : [i]))
 
   // Small parts are labelled in units: one alone, or a run of the same part side by side or end to
   // end, which takes one label for the lot.
@@ -197,7 +207,7 @@ export function planLabels(layout: Layout, px: number, text: number, kerf: numbe
     units.push({
       parts: run,
       box: { x: first.x, y: first.y, w: last.x + last.w - first.x, h: last.y + last.h - first.y },
-      label: run.length > 1 ? [`${run.length} × ${first.name}`, dims(first)] : partLabel(first),
+      label: run.length > 1 ? countLabel(run.length, first, named) : partLabel(first, named),
       across: last.x > first.x,
     })
   }
@@ -356,7 +366,7 @@ export function planLabels(layout: Layout, px: number, text: number, kerf: numbe
     return s ? [{ x: r.x + (r.w - s.w) / 2, y: r.y + (r.h - s.h) / 2, w: s.w, h: s.h }] : []
   }
   const solid: Rect[] = [
-    ...parts.flatMap((p) => held(partLabel(p), p)),
+    ...parts.flatMap((p) => held(partLabel(p, named), p)),
     ...layout.offcuts.flatMap((o) => held([dims(o)], o)),
     ...runs.flatMap((u) => held(u.label, labelRoom(u, font))),
     ...leaders.flatMap((l) => {

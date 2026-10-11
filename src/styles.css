@@ -605,19 +605,15 @@ input[type='range']::-moz-range-thumb {
   margin: 0;
 }
 
-select {
-  padding: 0.2rem 0;
-  border: 0;
-  border-bottom: 1px solid var(--faint);
-  border-radius: 0;
-  background: transparent;
-  color: var(--ink);
-  font: 400 0.875rem/1.35 var(--mono);
+.fills {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-select:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+.fills .letters span {
+  padding: 0.15em 0.5em;
+  text-transform: uppercase;
 }
 
 /* History: a stack of lines, the open run marked with a dot. */

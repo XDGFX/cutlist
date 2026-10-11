@@ -8,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react'
-import { clip, dims, fit, labelRoom, mm, partLabel, planLabels, type Detail } from './labels'
+import { clip, countLabel, dims, eachHolds, fit, labelRoom, mm, partLabel, planLabels, type Detail } from './labels'
 import {
   EFFORTS,
   optimise,
@@ -16,6 +16,7 @@ import {
   type Job,
   type Layout,
   type Part,
+  type Placement,
   type Rect,
   type SearchStats,
   type Solution,
@@ -26,6 +27,7 @@ import { Icon } from './Icon'
 import { asksToCalculate, enterTo, neighbour, stepTo } from './keys'
 import type { SearchRequest, Update } from './search.worker'
 import {
+  FILLS,
   jobFromHash,
   jobToHash,
   load,
@@ -180,9 +182,9 @@ export function App() {
   const worker = useRef<Worker | null>(null)
   const { job, runs } = state
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
-  const showCuts = state.showCuts ?? true
+  const showCuts = state.showCuts ?? false
   const partFill = state.partFill ?? 'mono'
-  const showNames = state.showNames ?? true
+  const showNames = state.showNames ?? false
   /** The field a new row is entered from. */
   const firstCol = showNames ? 'name' : 'length'
   const [status, setStatus] = useState('')
@@ -567,17 +569,22 @@ export function App() {
             />
             Number the cuts on the drawing
           </label>
-          <label>
-            Part fill
-            <select
-              value={partFill}
-              onChange={(e) => setState((s) => ({ ...s, partFill: e.target.value as PartFill }))}
-            >
-              <option value="none">None</option>
-              <option value="mono">Mono hatch</option>
-              <option value="colour">Colour</option>
-            </select>
-          </label>
+          <div className="fills">
+            <span id="fill">Part fill</span>
+            <div className="letters" role="radiogroup" aria-labelledby="fill">
+              {FILLS.map((fill) => (
+                <label key={fill}>
+                  <input
+                    type="radio"
+                    name="fill"
+                    checked={fill === partFill}
+                    onChange={() => setState((s) => ({ ...s, partFill: fill }))}
+                  />
+                  <span>{fill}</span>
+                </label>
+              ))}
+            </div>
+          </div>
           </section>
         </details>
 
@@ -747,6 +754,7 @@ export function App() {
                 showCuts={showCuts}
                 fill={partFill}
                 kerf={run.job.kerf}
+                named={showNames}
               />
             ))}
             {run.search && (
@@ -1019,6 +1027,7 @@ function Sheet({
   showCuts,
   fill,
   kerf,
+  named,
 }: {
   layout: Layout
   index: number
@@ -1026,6 +1035,7 @@ function Sheet({
   showCuts: boolean
   fill: PartFill
   kerf: number
+  named: boolean
 }) {
   const svg = useRef<SVGSVGElement>(null)
   // Sheet millimetres per screen pixel, so that text on a sheet is sized in pixels however large
@@ -1083,7 +1093,7 @@ function Sheet({
   const sequence = layout.sequence ?? []
   const used = layout.placements.reduce((a, p) => a + p.w * p.h, 0)
   const font = HEADING * px
-  const plan = useMemo(() => planLabels(layout, px, HEADING, kerf), [layout, px, kerf])
+  const plan = useMemo(() => planLabels(layout, px, HEADING, kerf, named), [layout, px, kerf, named])
   const grouped = new Set(plan.runs.flatMap((r) => r.parts))
   const covers = (r: Rect, inner: Rect) => {
     const shared = clip(r, inner)
@@ -1124,9 +1134,10 @@ function Sheet({
   const tile = (PATTERN * px) / TILES
   const pattern = (view: string, partId: string) => `url(#fill-${index}${view}-${partIds.indexOf(partId)})`
 
-  const key = new Map<string, { partId: string; name: string; count: number }>()
+  const key = new Map<string, { partId: string; part: Placement; count: number }>()
   for (const p of layout.placements) {
-    const entry = key.get(p.partId) ?? { partId: p.partId, name: p.name, count: 0 }
+    // A part is keyed at the size it was entered at, whichever way it lies.
+    const entry = key.get(p.partId) ?? { partId: p.partId, part: p.rotated ? { ...p, w: p.h, h: p.w } : p, count: 0 }
     entry.count++
     key.set(p.partId, entry)
   }
@@ -1160,9 +1171,14 @@ function Sheet({
       taken.push({ x: x - setting.w / 2, y: y - setting.h / 2, w: setting.w, h: setting.h })
       return <Label {...setting} x={x} y={y} font={font} className={className} plate={plate} />
     }
-    // One label across a run of the same part, wherever all of the run shows and holds it.
+    // One label across a run of the same part, wherever all of the run shows and holds it, unless
+    // the view is large enough for each part to hold its own.
+    const split = plan.runs.filter((r) => eachHolds(r, layout.placements, font, named))
+    const apart = new Set(split.flatMap((r) => r.parts))
     const across = plan.runs.map(
-      (r, n) => covers(view, r.box) && <g key={`r${n}`}>{label(r.label, labelRoom(r, font), 'part-label', true)}</g>,
+      (r, n) =>
+        covers(view, r.box) &&
+        !split.includes(r) && <g key={`r${n}`}>{label(r.label, labelRoom(r, font), 'part-label', true)}</g>,
     )
     return (
       <>
@@ -1192,7 +1208,7 @@ function Sheet({
           const bare = !detail && plan.small.has(i)
           return (
             <g key={`p${i}`}>
-              <title>{`${p.name}: ${dims(p)}`}</title>
+              <title>{partLabel(p, named).join(': ')}</title>
               <rect
                 className="part"
                 x={p.x}
@@ -1204,7 +1220,7 @@ function Sheet({
               {fill === 'colour' && !bare && (
                 <Band x={p.x} y={p.y} w={p.w} h={p.h} unit={unit} stroke={pattern(id, p.partId)} />
               )}
-              {!bare && !grouped.has(i) && label(partLabel(p), p, 'part-label')}
+              {!bare && (!grouped.has(i) || apart.has(i)) && label(partLabel(p, named), p, 'part-label')}
             </g>
           )
         })}
@@ -1259,7 +1275,7 @@ function Sheet({
       <figcaption className="bar">
         <h3>Sheet {index + 1}</h3>
         <span>
-          {layout.stockName} {mm(layout.length)} × {mm(layout.width)}
+          {named && layout.stockName} {mm(layout.length)} × {mm(layout.width)}
         </span>
         <span>{((used / (layout.length * layout.width)) * 100).toFixed(0)}% used</span>
       </figcaption>
@@ -1342,7 +1358,7 @@ function Sheet({
                 <rect width={tile * 2.4} height={tile * 1.5} style={{ fill: pattern('', k.partId) }} />
               </svg>
             )}
-            {k.count} × {k.name}
+            {named ? countLabel(k.count, k.part)[0] : countLabel(k.count, k.part, false).join(' ')}
           </li>
         ))}
       </ul>

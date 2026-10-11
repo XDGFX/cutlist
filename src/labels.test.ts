@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CHAR, clip, DETAIL_HEIGHT, DETAIL_PARTS, fit, labelRoom, partLabel, PIECE_SPARE, planLabels } from './labels'
+import { CHAR, clip, DETAIL_HEIGHT, DETAIL_PARTS, dims, eachHolds, fit, labelRoom, partLabel, PIECE_SPARE, planLabels } from './labels'
 import type { Cut, Layout, Placement } from './optimiser'
 
 const TEXT = 16
@@ -102,6 +102,38 @@ describe('planLabels', () => {
     expect(fit(plan.runs[0].label, labelRoom(plan.runs[0], TEXT), TEXT)).toBeDefined()
     expect(plan.leaders).toEqual([])
     expect(plan.details).toEqual([])
+  })
+
+  it('labels each part of a row by its size alone where names are hidden and that fits', () => {
+    const fronts = layout(row('drawer front', 3, 100, 100))
+
+    const named = planLabels(fronts, 1, TEXT, KERF)
+    const unnamed = planLabels(fronts, 1, TEXT, KERF, false)
+
+    expect(named.runs.map((r) => r.parts)).toEqual([[0, 1, 2]])
+    expect(unnamed.small.size).toBe(0)
+    expect(unnamed.runs).toEqual([])
+  })
+
+  it('leaves the name out of a run and a leader where names are hidden', () => {
+    const blocks = planLabels(layout(row('block', 5, 60, 60)), 1, TEXT, KERF, false)
+    const rails = planLabels(layout([placed('rail', 0, 0, 30, 1200), placed('stile', 1000, 0, 30, 1200)]), 2, TEXT, KERF, false)
+
+    expect(blocks.runs.map((r) => r.parts)).toEqual([[0, 1, 2, 3, 4]])
+    expect(blocks.runs[0].label.join(' ')).not.toContain('block')
+    expect(blocks.runs[0].label.join(' ')).toContain('5')
+    expect(blocks.runs[0].label.join(' ')).toContain(dims({ x: 0, y: 0, w: 60, h: 60 }))
+    // Parts of one size are told apart only by their names, so without them they share a label.
+    expect(rails.leaders.map((l) => l.text)).toEqual([dims({ x: 0, y: 0, w: 30, h: 1200 })])
+    expect(rails.leaders[0].parts).toEqual([0, 1])
+  })
+
+  it('finds that each part of a run holds its own label once drawn large enough', () => {
+    const blocks = layout(row('block', 5, 60, 60))
+    const [run] = planLabels(blocks, 1, TEXT, KERF).runs
+
+    expect(eachHolds(run, blocks.placements, TEXT)).toBe(false)
+    expect(eachHolds(run, blocks.placements, TEXT / 2)).toBe(true)
   })
 
   it('enlarges a run only as far as its one label needs', () => {
