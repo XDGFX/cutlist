@@ -128,8 +128,6 @@ export function App() {
   const [state, setState] = useState(initial)
   const [copied, setCopied] = useState(false)
   const [searching, setSearching] = useState<Searching | null>(null)
-  // Bumped when a search ends so the summary line replays its highlight.
-  const [finished, setFinished] = useState(0)
   const worker = useRef<Worker | null>(null)
   const { job, runs } = state
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
@@ -180,7 +178,6 @@ export function App() {
       w.terminate()
       worker.current = null
       setSearching(null)
-      setFinished((n) => n + 1)
       setState((s) => {
         const result = { at: Date.now(), effort, solutions: data.solutions, search: { ...data.stats, ms } }
         const latest = s.runs[0]
@@ -231,6 +228,7 @@ export function App() {
                 <th>Width</th>
                 <th>Qty</th>
                 <th />
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -242,6 +240,7 @@ export function App() {
                   <Num value={s.length} onChange={(length) => setStock(s.id, { length })} />
                   <Num value={s.width} onChange={(width) => setStock(s.id, { width })} />
                   <Num value={s.qty} onChange={(qty) => setStock(s.id, { qty })} />
+                  <td />
                   <td>
                     <button
                       className="ghost"
@@ -350,6 +349,7 @@ export function App() {
           </button>
         </section>
 
+        <section className="extras">
         <details className="fold">
           <summary>Drawing options</summary>
           <section className="checks">
@@ -374,11 +374,6 @@ export function App() {
           </label>
           </section>
         </details>
-
-        <section className="row">
-          <button onClick={copyLink}>{copied ? 'Link copied' : 'Copy link to this job'}</button>
-          <button onClick={() => setJob(sampleJob())}>Load example</button>
-        </section>
 
         {runs.length > 0 && (
           <details className="fold">
@@ -409,6 +404,12 @@ export function App() {
             </nav>
           </details>
         )}
+
+          <div className="row">
+            <button onClick={copyLink}>{copied ? 'Link copied' : 'Copy link to this job'}</button>
+            <button onClick={() => setJob(sampleJob())}>Load example</button>
+          </div>
+        </section>
       </aside>
 
       <main>
@@ -494,7 +495,7 @@ export function App() {
               />
             ))}
             {run.search && (
-              <p key={finished} className="summary">
+              <p className="summary">
                 Tried {count(run.search.tried)} layouts in {duration(run.search.ms)} at {EFFORTS[run.effort ?? 0].name}{' '}
                 effort · {run.search.improvements} improvements, the last at layout {count(run.search.lastImprovedAt)}
                 {run.search.tried < run.search.total && ' · stopped early'}
@@ -649,7 +650,7 @@ function Sheet({
   // Runs saved before the cutting order existed have none.
   const sequence = layout.sequence ?? []
   const badge = layout.length / 85
-  const maxFont = layout.length / 45
+  const maxFont = layout.length / 60
   const minFont = layout.length / 120
   const used = layout.placements.reduce((a, p) => a + p.w * p.h, 0)
   const tile = layout.length / TILES
