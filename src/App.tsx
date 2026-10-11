@@ -1,9 +1,27 @@
-import { useEffect, useMemo, useState } from 'react'
-import { optimise, type Job, type Layout, type Part, type Solution, type StockSheet } from './optimiser'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  EFFORTS,
+  optimise,
+  type Job,
+  type Layout,
+  type Part,
+  type SearchStats,
+  type Solution,
+  type StockSheet,
+} from './optimiser'
+import type { SearchRequest, Update } from './search.worker'
 import { jobFromHash, jobToHash, load, MAX_RUNS, newId, sampleJob, save, type Run, type Saved } from './storage'
 
 const mm = (n: number) => String(+n.toFixed(1))
 const m2 = (n: number) => (n / 1e6).toFixed(2)
+const count = (n: number) => n.toLocaleString('en-GB')
+const duration = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`)
+
+interface Searching {
+  stats: SearchStats
+  best: Solution | null
+  ms: number
+}
 const time = (at: number) =>
   new Date(at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
@@ -16,8 +34,9 @@ function largestOffcut(s: Solution): string {
 
 const solved = new Map<string, Solution[]>()
 
-/** A run's job never changes, so its solutions are worked out once per visit. */
+/** Runs normally carry their solutions; one saved without them is worked out again once per visit. */
 function solve(run: Run): Solution[] {
+  if (run.solutions) return run.solutions
   if (!solved.has(run.id)) solved.set(run.id, optimise(run.job))
   return solved.get(run.id)!
 }
@@ -32,12 +51,18 @@ function initial(): Saved {
 export function App() {
   const [state, setState] = useState(initial)
   const [copied, setCopied] = useState(false)
+  const [searching, setSearching] = useState<Searching | null>(null)
+  // Bumped when a search ends so the summary line replays its highlight.
+  const [finished, setFinished] = useState(0)
+  const worker = useRef<Worker | null>(null)
   const { job, runs } = state
+  const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
 
   useEffect(() => save(state), [state])
+  useEffect(() => () => worker.current?.terminate(), [])
 
   const run = runs.find((r) => r.id === state.activeRun) ?? null
-  const solutions = useMemo(() => (run ? solve(run) : []), [run?.job])
+  const solutions = useMemo(() => (run ? solve(run) : []), [run?.id, run?.solutions])
   const solution = solutions[Math.min(run?.pick ?? 0, solutions.length - 1)] as Solution | undefined
   const stale = run !== null && !sameJob(run.job, job)
 
@@ -48,13 +73,38 @@ export function App() {
   const setStock = (id: string, patch: Partial<StockSheet>) =>
     setJob({ stock: job.stock.map((s) => (s.id === id ? { ...s, ...patch } : s)) })
 
-  const calculate = () =>
-    setState((s) => {
-      const latest = s.runs[0]
-      if (latest && sameJob(latest.job, s.job)) return { ...s, activeRun: latest.id }
-      const next: Run = { id: newId(), at: Date.now(), job: structuredClone(s.job), pick: 0 }
-      return { ...s, runs: [next, ...s.runs].slice(0, MAX_RUNS), activeRun: next.id }
-    })
+  const calculate = () => {
+    if (worker.current) return
+    const searched = structuredClone(job)
+    const started = performance.now()
+    const w = new Worker(new URL('./search.worker.ts', import.meta.url), { type: 'module' })
+    worker.current = w
+    setSearching({ stats: { tried: 0, total: 0, improvements: 0, lastImprovedAt: 0 }, best: null, ms: 0 })
+
+    w.onmessage = ({ data }: MessageEvent<Update>) => {
+      const ms = performance.now() - started
+      if (data.type === 'progress') {
+        setSearching({ stats: data.stats, best: data.solutions[0] ?? null, ms })
+        return
+      }
+      w.terminate()
+      worker.current = null
+      setSearching(null)
+      setFinished((n) => n + 1)
+      setState((s) => {
+        const result = { at: Date.now(), effort, solutions: data.solutions, search: { ...data.stats, ms } }
+        const latest = s.runs[0]
+        // Repeating the latest run refreshes it rather than adding a duplicate to history.
+        if (latest && latest.effort === effort && sameJob(latest.job, searched))
+          return { ...s, runs: [{ ...latest, ...result }, ...s.runs.slice(1)], activeRun: latest.id }
+        const next: Run = { id: newId(), job: searched, pick: 0, ...result }
+        return { ...s, runs: [next, ...s.runs].slice(0, MAX_RUNS), activeRun: next.id }
+      })
+    }
+    w.postMessage({ type: 'start', job: searched, effort } satisfies SearchRequest)
+  }
+
+  const stop = () => worker.current?.postMessage({ type: 'stop' } satisfies SearchRequest)
 
   const pick = (index: number) =>
     setState((s) => ({ ...s, runs: s.runs.map((r) => (r.id === s.activeRun ? { ...r, pick: index } : r)) }))
@@ -191,8 +241,21 @@ export function App() {
               onChange={(e) => setJob({ kerf: e.target.valueAsNumber || 0 })}
             />
           </label>
-          <button className="primary" onClick={calculate}>
-            Calculate
+          <label className="effort">
+            <span>
+              Effort: <strong>{EFFORTS[effort].name}</strong>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max={EFFORTS.length - 1}
+              step="1"
+              value={effort}
+              onChange={(e) => setState((s) => ({ ...s, effort: e.target.valueAsNumber }))}
+            />
+          </label>
+          <button className="primary" onClick={calculate} disabled={searching !== null}>
+            {searching ? 'Searching…' : 'Calculate'}
           </button>
         </section>
 
@@ -210,6 +273,7 @@ export function App() {
               <span key={r.id} className={r.id === run?.id ? 'chip active' : 'chip'}>
                 <button onClick={() => setState((s) => ({ ...s, activeRun: r.id }))}>
                   {time(r.at)} · {r.job.parts.reduce((n, p) => n + p.qty, 0)} parts
+                  {r.effort ? ` · ${EFFORTS[r.effort].name}` : ''}
                 </button>
                 <button className="ghost" aria-label={`Delete run from ${time(r.at)}`} onClick={() => removeRun(r.id)}>
                   ×
@@ -219,7 +283,28 @@ export function App() {
           </nav>
         )}
 
-        {!run && <p className="empty">Enter stock sheets and parts, then press Calculate.</p>}
+        {searching && (
+          <section className="progress" aria-live="polite">
+            <progress value={searching.stats.tried} max={searching.stats.total || 1} />
+            <p>
+              <strong>
+                {count(searching.stats.tried)} of {count(searching.stats.total)}
+              </strong>{' '}
+              layouts tried in {duration(searching.ms)} ·{' '}
+              {count(Math.round(searching.stats.tried / (searching.ms / 1000 || 1)))} per second ·{' '}
+              {searching.stats.improvements} improvements, the last at layout {count(searching.stats.lastImprovedAt)}
+            </p>
+            {searching.best && (
+              <p>
+                Best so far: {searching.best.stats.sheets} {searching.best.stats.sheets === 1 ? 'sheet' : 'sheets'} ·{' '}
+                {largestOffcut(searching.best)} · {searching.best.stats.cuts} cuts
+              </p>
+            )}
+            <button onClick={stop}>Stop and keep the best so far</button>
+          </section>
+        )}
+
+        {!run && !searching && <p className="empty">Enter stock sheets and parts, then press Calculate.</p>}
 
         {run && stale && (
           <p className="notice">
@@ -231,6 +316,14 @@ export function App() {
 
         {run && solution && (
           <>
+            {run.search && (
+              <p key={finished} className="summary">
+                Tried <strong>{count(run.search.tried)}</strong> layouts in {duration(run.search.ms)} at{' '}
+                {EFFORTS[run.effort ?? 0].name} effort · {run.search.improvements} improvements, the last at layout{' '}
+                {count(run.search.lastImprovedAt)}
+                {run.search.tried < run.search.total && ' · stopped early'}
+              </p>
+            )}
             <nav className="chips" aria-label="Candidates">
               <h2>Options</h2>
               {solutions.map((s, i) => (

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_CANDIDATES, MIN_OFFCUT_SIDE, optimise, type Job, type Part, type StockSheet } from './optimiser'
+import {
+  compareSolutions,
+  createSearch,
+  EFFORTS,
+  MAX_CANDIDATES,
+  MIN_OFFCUT_SIDE,
+  optimise,
+  type Job,
+  type Part,
+  type StockSheet,
+} from './optimiser'
 
 const part = (over: Partial<Part>): Part => ({
   id: 'p',
@@ -141,6 +151,35 @@ describe('optimise', () => {
 
   it('gives the same solutions every time for the same job', () => {
     expect(optimise(cabinet)).toEqual(optimise(cabinet))
+  })
+
+  it('gives the same solutions however the search is batched', () => {
+    const search = createSearch(cabinet, 1)
+    while (!search.finished()) search.step(7)
+    expect(search.stats().tried).toBe(search.stats().total)
+    expect(search.solutions()).toEqual(optimise(cabinet, 1))
+  })
+
+  it('tries more layouts at each effort level and never ends up with a worse best solution', () => {
+    const results = EFFORTS.slice(0, 3).map((_, effort) => {
+      const search = createSearch(cabinet, effort)
+      while (!search.finished()) search.step(1024)
+      return { total: search.stats().total, best: search.solutions()[0] }
+    })
+    for (let i = 1; i < results.length; i++) {
+      expect(results[i].total).toBeGreaterThan(results[i - 1].total)
+      expect(compareSolutions(results[i].best, results[i - 1].best)).toBeLessThanOrEqual(0)
+    }
+  })
+
+  it('keeps the best solution found so far when the search is cut short', () => {
+    const search = createSearch(cabinet, 2)
+    search.step(200)
+    expect(search.finished()).toBe(false)
+    const [early] = search.solutions()
+    expect(early.stats.unplaced).toBe(0)
+    while (!search.finished()) search.step(1024)
+    expect(compareSolutions(search.solutions()[0], early)).toBeLessThanOrEqual(0)
   })
 
   it('does not list a sliver as an offcut', () => {

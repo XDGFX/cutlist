@@ -13,4 +13,6 @@
 - **Offcut**: a leftover rectangle large enough to be worth keeping. Smaller leftovers are waste.
 - **Solution**: one set of layouts that answers a job, with any parts it could not place.
 - **Candidate**: one of the alternative solutions offered for the same job.
-- **Run**: one calculation of a job, kept in history with the candidate that was chosen.
+- **Effort**: how many layouts a calculation tries before it settles on its candidates.
+- **Run**: one calculation of a job at one effort, kept in history with its candidates and the one
+  that was chosen.
