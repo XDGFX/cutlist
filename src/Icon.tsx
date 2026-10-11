@@ -13,17 +13,18 @@ const ICONS = {
 
 export type IconName = keyof typeof ICONS
 
-/** Doto at weight 900 sets square dots 0.09em wide every 0.1em, seven rows to a capital. */
+/** Doto sets a dot every 0.1em, seven rows to a capital. */
 const PITCH = 10
-const DOT = 9
 
 /** Sized in ems of the heading, whatever the text beside it. */
 export function Icon({ name }: { name: IconName }) {
   const rows = ICONS[name]
   const width = rows[0].length * PITCH
   const height = rows.length * PITCH
-  // Each dot sits in the middle of its cell, which keeps the outermost ones clear of the edge.
-  const inset = (PITCH - DOT) / 2
+  // Dots fill their cells and share one path, so no seam shows between neighbours at any zoom.
+  const dots = rows
+    .flatMap((row, y) => [...row].map((dot, x) => (dot === '#' ? `M${x * PITCH} ${y * PITCH}h${PITCH}v${PITCH}h${-PITCH}z` : '')))
+    .join('')
   return (
     <svg
       className="icon"
@@ -32,9 +33,7 @@ export function Icon({ name }: { name: IconName }) {
       style={{ width: `${width / 100}em`, height: `${height / 100}em` }}
       aria-hidden="true"
     >
-      {rows.flatMap((row, y) =>
-        [...row].map((dot, x) => dot === '#' && <rect key={`${x},${y}`} x={x * PITCH + inset} y={y * PITCH + inset} width={DOT} height={DOT} />),
-      )}
+      <path d={dots} />
     </svg>
   )
 }
