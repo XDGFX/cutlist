@@ -57,6 +57,8 @@ export function App() {
   const worker = useRef<Worker | null>(null)
   const { job, runs } = state
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
+  const safe = state.safe ?? true
+  const showCuts = state.showCuts ?? true
 
   useEffect(() => save(state), [state])
   useEffect(() => () => worker.current?.terminate(), [])
@@ -92,16 +94,16 @@ export function App() {
       setSearching(null)
       setFinished((n) => n + 1)
       setState((s) => {
-        const result = { at: Date.now(), effort, solutions: data.solutions, search: { ...data.stats, ms } }
+        const result = { at: Date.now(), effort, safe, solutions: data.solutions, search: { ...data.stats, ms } }
         const latest = s.runs[0]
         // Repeating the latest run refreshes it rather than adding a duplicate to history.
-        if (latest && latest.effort === effort && sameJob(latest.job, searched))
+        if (latest && latest.effort === effort && latest.safe === safe && sameJob(latest.job, searched))
           return { ...s, runs: [{ ...latest, ...result }, ...s.runs.slice(1)], activeRun: latest.id }
         const next: Run = { id: newId(), job: searched, pick: 0, ...result }
         return { ...s, runs: [next, ...s.runs].slice(0, MAX_RUNS), activeRun: next.id }
       })
     }
-    w.postMessage({ type: 'start', job: searched, effort } satisfies SearchRequest)
+    w.postMessage({ type: 'start', job: searched, effort, safe } satisfies SearchRequest)
   }
 
   const stop = () => worker.current?.postMessage({ type: 'stop' } satisfies SearchRequest)
@@ -259,6 +261,25 @@ export function App() {
           </button>
         </section>
 
+        <section className="checks">
+          <label title="Order the cuts so each one sets a part's size straight off an edge, and prefer layouts where no part is left as whatever remains between other cuts. Errors then end up in the offcut instead of adding up on a part.">
+            <input
+              type="checkbox"
+              checked={safe}
+              onChange={(e) => setState((s) => ({ ...s, safe: e.target.checked }))}
+            />
+            Size one part per cut (avoid stacked tolerances)
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={showCuts}
+              onChange={(e) => setState((s) => ({ ...s, showCuts: e.target.checked }))}
+            />
+            Number the cuts on the drawing
+          </label>
+        </section>
+
         <section className="row">
           <button onClick={copyLink}>{copied ? 'Link copied' : 'Copy link to this job'}</button>
           <button onClick={() => setJob(sampleJob())}>Load example</button>
@@ -331,6 +352,7 @@ export function App() {
                   <button onClick={() => pick(i)}>
                     {String.fromCharCode(65 + i)} · {s.stats.sheets} {s.stats.sheets === 1 ? 'sheet' : 'sheets'} ·{' '}
                     {largestOffcut(s)} · {s.stats.cuts} cuts
+                    {s.stats.stacked ? ` · ⚠ ${s.stats.stacked} stacked` : ''}
                   </button>
                 </span>
               ))}
@@ -343,7 +365,15 @@ export function App() {
               <Stat label="Waste" value={`${m2(solution.stats.wasteArea)} m² (${solution.stats.wastePct.toFixed(1)}%)`} />
               <Stat label="Cuts" value={String(solution.stats.cuts)} />
               <Stat label="Cut length" value={`${(solution.stats.cutLength / 1000).toFixed(2)} m`} />
+              <Stat label="Stacked sizes" value={String(solution.stats.stacked ?? '–')} />
             </dl>
+
+            {solution.stats.stacked > 0 && (
+              <p className="notice warn">
+                {solution.stats.stacked} part {solution.stats.stacked === 1 ? 'size is' : 'sizes are'} whatever remains
+                between other cuts, so cutting errors add up there. They are marked ⚠ in the cutting order.
+              </p>
+            )}
 
             {solution.unplaced.length > 0 && (
               <p className="notice warn">
@@ -352,7 +382,13 @@ export function App() {
             )}
 
             {solution.layouts.map((layout, i) => (
-              <Sheet key={i} index={i} layout={layout} partIds={run.job.parts.map((p) => p.id)} />
+              <Sheet
+                key={i}
+                index={i}
+                layout={layout}
+                partIds={run.job.parts.map((p) => p.id)}
+                showCuts={showCuts}
+              />
             ))}
           </>
         )}
@@ -378,7 +414,20 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function Sheet({ layout, index, partIds }: { layout: Layout; index: number; partIds: string[] }) {
+function Sheet({
+  layout,
+  index,
+  partIds,
+  showCuts,
+}: {
+  layout: Layout
+  index: number
+  partIds: string[]
+  showCuts: boolean
+}) {
+  // Runs saved before the cutting order existed have none.
+  const sequence = layout.sequence ?? []
+  const badge = layout.length / 125
   const maxFont = layout.length / 45
   const minFont = layout.length / 170
   const used = layout.placements.reduce((a, p) => a + p.w * p.h, 0)
@@ -444,6 +493,22 @@ function Sheet({ layout, index, partIds }: { layout: Layout; index: number; part
             {label([p.name, `${mm(p.w)} × ${mm(p.h)}`], p.x, p.y, p.w, p.h, 'part-label')}
           </g>
         ))}
+        {showCuts &&
+          sequence.map((c, i) => {
+            // Staggered along the cut so that badges on neighbouring cuts do not pile up.
+            const along = 0.25 + 0.5 * ((i * 0.618) % 1)
+            const x = c.x1 + (c.x2 - c.x1) * along
+            const y = c.y1 + (c.y2 - c.y1) * along
+            return (
+              <g key={`c${i}`} className={c.remainder.length ? 'cut stacked' : 'cut'}>
+                <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} />
+                <circle cx={x} cy={y} r={badge} />
+                <text x={x} y={y} fontSize={badge * 1.2}>
+                  {i + 1}
+                </text>
+              </g>
+            )
+          })}
       </svg>
       <ul className="key">
         {[...key.values()].map((k) => (
@@ -455,6 +520,21 @@ function Sheet({ layout, index, partIds }: { layout: Layout; index: number; part
       </ul>
       {layout.offcuts.length > 0 && (
         <p className="offcuts">Offcuts: {layout.offcuts.map((o) => `${mm(o.w)} × ${mm(o.h)}`).join(', ')}</p>
+      )}
+      {sequence.length > 0 && (
+        <details className="sequence" open>
+          <summary>Cutting order ({sequence.length} cuts)</summary>
+          <ol>
+            {sequence.map((c, i) => (
+              <li key={i} className={c.remainder.length ? 'stacked' : undefined}>
+                {c.rip ? 'Rip' : 'Crosscut'} at <strong>{mm(c.fence)}</strong> from the{' '}
+                {c.rip ? (c.far ? 'bottom' : 'top') : c.far ? 'right' : 'left'}
+                {c.sizes.length > 0 ? ` → ${c.sizes.join(', ')}` : ' → frees leftover'}
+                {c.remainder.length > 0 && ` ⚠ ${c.remainder.join(', ')} is what remains`}
+              </li>
+            ))}
+          </ol>
+        </details>
       )}
     </figure>
   )

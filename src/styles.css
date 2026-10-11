@@ -401,6 +401,75 @@ text {
   color: var(--muted);
 }
 
+.checks {
+  display: grid;
+  gap: 6px;
+}
+
+.checks label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Lets a badge on a cut at the sheet's edge show in full. */
+.sheet svg {
+  overflow: visible;
+}
+
+.cut line {
+  stroke: var(--accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.cut circle {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.cut text {
+  fill: var(--ink);
+  font-family: system-ui, sans-serif;
+  font-weight: 600;
+}
+
+.cut.stacked circle {
+  fill: var(--accent);
+}
+
+.cut.stacked text {
+  fill: var(--accent-ink);
+}
+
+.sequence {
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sequence summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.sequence ol {
+  margin: 6px 0 0;
+  padding-left: 2.2em;
+  columns: 2 300px;
+  column-gap: 32px;
+}
+
+.sequence li {
+  break-inside: avoid;
+  padding: 1px 0;
+}
+
+.sequence li.stacked {
+  color: var(--accent);
+}
+
 .offcuts {
   margin: 6px 0 0;
   color: var(--muted);

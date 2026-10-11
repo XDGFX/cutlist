@@ -9,6 +9,11 @@
   keeps its grain aligned with the sheet.
 - **Kerf**: the width of material the blade removes with each cut.
 - **Guillotine cut**: a straight cut that runs from one edge of a piece to the opposite edge.
+- **Rip / crosscut**: a rip runs along the sheet's length; a crosscut runs across it.
+- **Cutting order**: the cuts for one layout in the sequence to make them, each with its fence
+  distance.
+- **Remainder**: a part size that no cut sets directly, because it is whatever is left between
+  other cuts. Cutting errors add up on it. A layout's remainders are counted as its stacked sizes.
 - **Layout**: the parts placed on one stock sheet.
 - **Offcut**: a leftover rectangle large enough to be worth keeping. Smaller leftovers are waste.
 - **Solution**: one set of layouts that answers a job, with any parts it could not place.
