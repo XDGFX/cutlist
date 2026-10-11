@@ -20,6 +20,7 @@ import {
   type StockSheet,
 } from './optimiser'
 import { flourishPage } from './flourish'
+import { Icon } from './Icon'
 import { asksToCalculate, enterTo, neighbour, stepTo } from './keys'
 import type { SearchRequest, Update } from './search.worker'
 import {
@@ -174,6 +175,7 @@ export function App() {
   const [state, setState] = useState(initial)
   const [copied, setCopied] = useState(false)
   const [searching, setSearching] = useState<Searching | null>(null)
+  const [cleared, setCleared] = useState<{ stock?: StockSheet[]; parts?: Part[] }>({})
   const worker = useRef<Worker | null>(null)
   const { job, runs } = state
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
@@ -256,6 +258,17 @@ export function App() {
     if (to === 'add') (list === 'stock' ? addStock : addPart)()
     else focusOn(cell(ids[to], col), true)
   }
+  const clear = (list: 'stock' | 'parts') => {
+    setCleared((c) => ({ ...c, [list]: job[list] }))
+    setJob({ [list]: [] })
+  }
+  // A cleared list can be brought back only until something else is put in it.
+  useEffect(() => {
+    setCleared((c) => ({
+      stock: job.stock.length ? undefined : c.stock,
+      parts: job.parts.length ? undefined : c.parts,
+    }))
+  }, [job.stock.length, job.parts.length])
 
   const calculate = () => {
     if (worker.current) return
@@ -395,9 +408,12 @@ export function App() {
               })}
             </tbody>
           </table>
-          <button data-add="stock" onClick={addStock}>
-            + Stock sheet
-          </button>
+          <div className="actions">
+            <button data-add="stock" onClick={addStock}>
+              <Icon name="plus" /> Stock sheet
+            </button>
+            <ClearOrUndo items={job.stock} held={cleared.stock} onClear={() => clear('stock')} onUndo={() => setJob({ stock: cleared.stock })} />
+          </div>
         </section>
 
         <section>
@@ -458,9 +474,12 @@ export function App() {
           <p id="rotate-help" className="unseen">
             {ROTATE_HELP}
           </p>
-          <button data-add="parts" onClick={addPart}>
-            + Part
-          </button>
+          <div className="actions">
+            <button data-add="parts" onClick={addPart}>
+              <Icon name="plus" /> Part
+            </button>
+            <ClearOrUndo items={job.parts} held={cleared.parts} onClear={() => clear('parts')} onUndo={() => setJob({ parts: cleared.parts })} />
+          </div>
         </section>
 
         <section className="row">
@@ -510,7 +529,9 @@ export function App() {
 
         <section className="extras">
         <details className="fold">
-          <summary>Options</summary>
+          <summary>
+            <FoldMark /> Options
+          </summary>
           <section className="checks">
           <label>
             <input
@@ -544,7 +565,9 @@ export function App() {
 
         {runs.length > 0 && (
           <details className="fold">
-            <summary>History ({runs.length})</summary>
+            <summary>
+              <FoldMark /> History ({runs.length})
+            </summary>
             <ul className="stack" aria-label="History">
               {runs.map((r) => (
                 <li key={r.id} className="bar" data-run={r.id}>
@@ -573,7 +596,9 @@ export function App() {
         )}
 
         <details className="fold">
-          <summary>Keys</summary>
+          <summary>
+            <FoldMark /> Keys
+          </summary>
           <dl className="keys">
             <dt>Enter</dt>
             <dd>Next row, or a new row from the last</dd>
@@ -715,10 +740,10 @@ export function App() {
         </span>
         <span className="links loud">
           <a href="https://github.com/sponsors/XDGFX">
-            <Glyph rows={HEART} /> Donate
+            <Icon name="heart" /> Donate
           </a>
           <a href={REPO}>
-            <Glyph rows={CODE} /> Source
+            <Icon name="code" /> Source
           </a>
         </span>
       </footer>
@@ -730,15 +755,29 @@ const REPO = 'https://github.com/XDGFX/cutlist'
 /** The latest release and any commits since, which the deploy workflow reads from the tags. */
 const VERSION: string = import.meta.env.VITE_VERSION || 'dev'
 
-const HEART = ['.##.##.', '#######', '#######', '.#####.', '..###..', '...#...']
-const CODE = ['..#...#..', '.#.....#.', '#.......#', '.#.....#.', '..#...#..']
-
-/** A picture drawn a pixel to each `#`. */
-function Glyph({ rows }: { rows: string[] }) {
+/** A plus on a closed fold and a minus on an open one; the stylesheet shows whichever applies. */
+function FoldMark() {
   return (
-    <svg className="glyph" viewBox={`0 0 ${rows[0].length} ${rows.length}`} width={rows[0].length} height={rows.length} aria-hidden="true">
-      {rows.flatMap((row, y) => [...row].map((dot, x) => dot === '#' && <rect key={`${x},${y}`} x={x} y={y} width="1" height="1" />))}
-    </svg>
+    <>
+      <Icon name="plus" />
+      <Icon name="minus" />
+    </>
+  )
+}
+
+/** Empties a list, then offers to bring back what it held. */
+function ClearOrUndo({ items, held, onClear, onUndo }: { items: unknown[]; held?: unknown[]; onClear: () => void; onUndo: () => void }) {
+  if (items.length > 0)
+    return (
+      <button onClick={onClear}>
+        <Icon name="bin" /> Clear
+      </button>
+    )
+  if (!held) return null
+  return (
+    <button onClick={onUndo}>
+      <Icon name="undo" /> Undo
+    </button>
   )
 }
 
@@ -1142,7 +1181,9 @@ function Sheet({
       </ul>
       {sequence.length > 0 && (
         <details ref={order} className="sequence">
-          <summary>Cutting order ({sequence.length} cuts)</summary>
+          <summary>
+            <FoldMark /> Cutting order ({sequence.length} cuts)
+          </summary>
           <ol>
             {sequence.map((c, i) => (
               <li

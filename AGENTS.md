@@ -7,6 +7,7 @@ Deployed to GitHub Pages by `.github/workflows/deploy.yml` on every push to `mai
 - `src/optimiser.ts` is pure and has no DOM or storage access. Keep it that way.
 - The search is seeded and counts tries, never time, so a job and effort always give the same
   solutions. The page runs it in `src/search.worker.ts`; a run stores the solutions it found.
+- Icons are drawn in `src/Icon.tsx`. Add a new one there rather than as an SVG or a text symbol.
 - The version in the footer is the latest `v*` tag. To cut a release, follow `RELEASING.md`.
 
 ## Gates
