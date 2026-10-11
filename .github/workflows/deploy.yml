@@ -19,6 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The version comes from the release tags.
+          fetch-depth: 0
+      # v1.2.0 on a release, v1.2.0+3 three commits after it.
+      - run: echo "VITE_VERSION=$(git describe --tags --match 'v*' | sed -E 's/-([0-9]+)-g[0-9a-f]+$/+\1/')" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 24

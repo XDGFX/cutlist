@@ -27,4 +27,10 @@ npm test
 npm run build
 ```
 
-Every push to `main` deploys to GitHub Pages.
+Every push to `main` deploys to GitHub Pages. The version in the footer is the latest release tag;
+[`RELEASING.md`](RELEASING.md) says how to cut one.
+
+## Licence
+
+[AGPL-3.0](LICENSE). Change it, host it and sell it, as long as your version's source is published under
+the same licence.
