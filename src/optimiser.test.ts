@@ -186,6 +186,110 @@ describe('optimise', () => {
     })
   })
 
+  describe('fence moves', () => {
+    const settings = (solution: Solution) => solution.layouts[0].sequence.map((c) => c.fence)
+
+    it('cuts strips of one width together, widest first', () => {
+      const [solution] = optimise({
+        kerf: 0,
+        stock: [sheet({ length: 1000, width: 600 })],
+        parts: [
+          part({ id: 'narrow', name: 'narrow', length: 1000, width: 70, qty: 2, canRotate: false }),
+          part({ id: 'wide', name: 'wide', length: 1000, width: 110, qty: 2, canRotate: false }),
+        ],
+      })
+      expect(settings(solution)).toEqual([110, 110, 70, 70])
+      expect(solution.stats).toMatchObject({ fenceMoves: 2, narrowFirst: 0 })
+    })
+
+    it('leaves a piece part cut to reuse the fence setting on another', () => {
+      // Whichever way the two pairs are laid out, finishing one piece at a time takes four moves.
+      const [solution] = optimise({
+        kerf: 0,
+        stock: [sheet({ length: 1010, width: 210 })],
+        parts: [
+          part({ id: 'long', length: 600, width: 100, qty: 2, canRotate: false }),
+          part({ id: 'short', length: 400, width: 100, qty: 2, canRotate: false }),
+        ],
+      })
+      expect(solution.stats).toMatchObject({ stacked: 0, cuts: 6, fenceMoves: 3 })
+    })
+
+    it('counts a change of reference edge as a move', () => {
+      // With the strip nearest the edge, the squares are sized at 200 off the far edge and then
+      // at 200 off the near one. With the squares nearest, every cut shares one setting.
+      const [solution] = optimise({
+        kerf: 0,
+        stock: [sheet({ length: 1000, width: 300 })],
+        parts: [
+          part({ id: 'strip', length: 1000, width: 100, canRotate: false }),
+          part({ id: 'square', length: 200, width: 200, qty: 5 }),
+        ],
+      })
+      expect(solution.layouts[0].sequence[0]).toMatchObject({ rip: true, fence: 200, far: false })
+      expect(solution.stats.fenceMoves).toBe(1)
+    })
+
+    const [base] = optimise({
+      kerf: 0,
+      stock: [sheet({ length: 1000, width: 600 })],
+      parts: [part({ length: 1000, width: 250, qty: 2, canRotate: false })],
+    })
+    const roomier = (s: Solution): Solution => ({
+      ...s,
+      layouts: s.layouts.map((l) => ({ ...l, offcuts: [{ x: 0, y: 400, w: 1000, h: 200 }] })),
+    })
+    const withStats = (s: Solution, stats: Partial<Solution['stats']>): Solution => ({
+      ...s,
+      stats: { ...s.stats, ...stats },
+    })
+
+    it('ranks fewer fence moves above a larger offcut, and fewer remainders above both', () => {
+      const moved = withStats(roomier(base), { fenceMoves: base.stats.fenceMoves + 1 })
+      expect(compareSolutions(base, moved)).toBeLessThan(0)
+      const stacked = withStats(base, { stacked: 1, fenceMoves: 0 })
+      expect(compareSolutions(moved, stacked)).toBeLessThan(0)
+    })
+
+    it('ranks a larger offcut above cutting widest first', () => {
+      const narrowFirst = withStats(roomier(base), { narrowFirst: 1 })
+      expect(compareSolutions(narrowFirst, base)).toBeLessThan(0)
+      expect(compareSolutions(base, withStats(base, { narrowFirst: 1 }))).toBeLessThan(0)
+    })
+
+    describe('for a job of strips and short parts across mixed stock', () => {
+      const strip = (name: string, length: number, width: number, qty: number) =>
+        part({ id: name, name, length, width, qty })
+      const job: Job = {
+        kerf: 1.6,
+        parts: [strip('thin', 30, 1220, 2), strip('long', 110, 1220, 3), strip('short', 110, 384, 3), strip('block', 199, 590, 1)],
+        stock: [
+          sheet({ id: 'full', length: 2440, width: 1220 }),
+          sheet({ id: 'spare', length: 700, width: 1220 }),
+          sheet({ id: 'a', length: 520, width: 564 }),
+          sheet({ id: 'b', length: 173, width: 663, qty: 2 }),
+          sheet({ id: 'c', length: 330, width: 630 }),
+        ],
+      }
+      const options = optimise(job, EFFORTS.findIndex((e) => e.name === 'Thorough'))
+
+      it('cuts the long strips together, then the thin ones', () => {
+        const spare = options[0].layouts.find((l) => l.stockId === 'spare')!
+        expect(spare.sequence.slice(0, 5).map((c) => c.sizes)).toEqual([['long'], ['long'], ['long'], ['thin'], ['thin']])
+      })
+
+      it('sets the width of the short parts on a sheet without moving the fence in between', () => {
+        for (const option of options)
+          for (const { sequence } of option.layouts) {
+            const sets = sequence.flatMap((c, i) => (c.sizes.includes('short') && Math.abs(c.fence - 110) < 1e-6 ? [i] : []))
+            if (!sets.length) continue
+            const run = sequence.slice(sets[0], sets[sets.length - 1] + 1)
+            expect(run.every((c) => Math.abs(c.fence - 110) < 1e-6 && c.far === run[0].far)).toBe(true)
+          }
+      })
+    })
+  })
+
   it('gives the same solutions every time for the same job', () => {
     expect(optimise(cabinet)).toEqual(optimise(cabinet))
   })

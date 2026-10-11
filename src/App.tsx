@@ -380,7 +380,8 @@ export function App() {
               <Stat label="Used" value={`${m2(solution.stats.usedArea)} m²`} />
               <Stat label="Waste" value={`${m2(solution.stats.wasteArea)} m² (${solution.stats.wastePct.toFixed(1)}%)`} />
               <Stat label="Cuts" value={String(solution.stats.cuts)} />
-              <Stat label="Cut length" value={`${(solution.stats.cutLength / 1000).toFixed(2)} m`} />
+              <Stat label="Fence moves" value={String(solution.stats.fenceMoves ?? '–')} />
+              <Stat label="Cut length"value={`${(solution.stats.cutLength / 1000).toFixed(2)} m`} />
               <Stat label="Stacked sizes" value={String(solution.stats.stacked ?? '–')} />
             </dl>
 

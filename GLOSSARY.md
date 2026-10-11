@@ -12,6 +12,10 @@
 - **Rip / crosscut**: a rip runs along the sheet's length; a crosscut runs across it.
 - **Cutting order**: the cuts for one layout in the sequence to make them, each with its fence
   distance.
+- **Fence move**: setting the fence to a new distance, or measuring from the opposite edge of the
+  piece. Consecutive cuts on a sheet that share both need no move, whichever way they run.
+- **Widest first**: sizing wider parts before narrower ones, so that a part cut wrong can still be
+  cut down into a narrower one.
 - **Remainder**: a part size that no cut sets directly, because it is whatever is left between
   other cuts. Cutting errors add up on it. A layout's remainders are counted as its stacked sizes.
 - **Layout**: the parts placed on one stock sheet.
