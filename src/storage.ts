@@ -18,6 +18,9 @@ export interface Run {
   search?: SearchSummary
 }
 
+/** How the drawing tells parts apart: not at all, by a black pattern, or by a coloured border. */
+export type PartFill = 'none' | 'mono' | 'colour'
+
 export interface Saved {
   job: Job
   runs: Run[]
@@ -26,6 +29,7 @@ export interface Saved {
   safe?: boolean
   showCuts?: boolean
   showFences?: boolean
+  partFill?: PartFill
 }
 
 export const MAX_RUNS = 30

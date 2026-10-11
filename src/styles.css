@@ -1,28 +1,21 @@
 :root {
-  --bg: #f4f1ea;
-  --panel: #fbfaf6;
-  --ink: #1f1d1a;
-  --muted: #6f6a60;
-  --line: #d9d3c5;
-  --accent: #c2410c;
-  --accent-ink: #fff;
-  --board: #e9e2d0;
-  --offcut: #f7f3e6;
+  --bg: #fff;
+  --ink: #000;
+  --muted: #757575;
+  --faint: #b1b1b1;
+  --offcut: #f3f3f3;
+  --mono: 'DM Mono', ui-monospace, Menlo, monospace;
+  --sans: 'Familjen Grotesk Variable', Arial, sans-serif;
   color-scheme: light dark;
-  font: 14px/1.4 system-ui, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #171614;
-    --panel: #201f1c;
-    --ink: #ece8df;
-    --muted: #a39d90;
-    --line: #3a3833;
-    --accent: #f97316;
-    --accent-ink: #1a1207;
-    --board: #2c2a25;
-    --offcut: #37342d;
+    --bg: #000;
+    --ink: #fff;
+    --muted: #949494;
+    --faint: #555;
+    --offcut: #1c1c1c;
   }
 }
 
@@ -30,71 +23,129 @@
   box-sizing: border-box;
 }
 
+::selection {
+  background: var(--ink);
+  color: var(--bg);
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
+  font: 0.8125rem/1.35 var(--sans);
 }
 
 .app {
   display: grid;
-  grid-template-columns: minmax(340px, 420px) 1fr;
+  grid-template-columns: minmax(340px, 26rem) 1fr;
+  column-gap: 3rem;
+  align-items: start;
   min-height: 100vh;
+  padding: 0 0.75rem 3rem;
+}
+
+/* A line of capitals with a figure pinned to each edge. */
+.bar {
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  column-gap: 1em;
+  align-items: baseline;
+  margin: 0;
+  font: 400 0.9375rem/1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.bar > :first-child {
+  justify-self: start;
+}
+
+.bar > :last-child {
+  justify-self: end;
+}
+
+.masthead {
+  grid-column: 1 / -1;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.5rem 0;
+  margin-bottom: 1.5rem;
+  background: var(--bg);
+  font-size: 1.3rem;
+}
+
+h1,
+h2 {
+  margin: 0;
+  font: inherit;
 }
 
 .inputs {
-  background: var(--panel);
-  border-right: 1px solid var(--line);
-  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 2rem;
+  font-family: var(--mono);
+}
+
+.inputs h2 {
+  margin-bottom: 0.6rem;
 }
 
 main {
-  padding: 20px;
   min-width: 0;
 }
 
-h1 {
+p {
   margin: 0;
-  font-size: 22px;
-  letter-spacing: -0.02em;
 }
 
-h2 {
-  margin: 0 0 8px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+.intro,
+.checks,
+.empty,
+.notice,
+.sequence ol {
+  font-family: var(--sans);
 }
 
-header p {
-  margin: 4px 0 0;
+.intro {
+  max-width: 34em;
   color: var(--muted);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 8px;
+  margin-bottom: 0.5rem;
+}
+
+th,
+.row label,
+dt,
+.sequence summary {
+  font: 400 0.6875rem/1.3 var(--mono);
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 th {
   text-align: left;
-  font-weight: 500;
-  font-size: 12px;
-  color: var(--muted);
-  padding: 0 2px 4px;
+  padding: 0 0.5rem 0.2rem 0;
 }
 
 td {
-  padding: 2px;
+  padding: 0 0.5rem 0 0;
 }
 
 td:first-child {
-  width: 32%;
+  width: 34%;
+}
+
+th:last-child,
+td:last-child {
+  padding-right: 0;
+  text-align: right;
 }
 
 input[type='number'] {
@@ -105,245 +156,293 @@ input[type='number']::-webkit-inner-spin-button {
   appearance: none;
 }
 
-input:not([type='checkbox']) {
+input:not([type='checkbox'], [type='range']) {
   width: 100%;
-  padding: 5px 6px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--bg);
-  color: inherit;
-  font: inherit;
+  padding: 0.3rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--faint);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 0.8125rem/1.35 var(--mono);
+  text-transform: none;
   font-variant-numeric: tabular-nums;
 }
 
-input:focus-visible,
-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+input:not([type='checkbox'], [type='range']):hover {
+  border-bottom-color: var(--muted);
+}
+
+input:not([type='checkbox'], [type='range']):focus {
+  outline: 0;
+  border-bottom-color: var(--ink);
+  box-shadow: 0 1px 0 var(--ink);
+}
+
+input[type='checkbox'],
+input[type='range'] {
+  accent-color: var(--ink);
+}
+
+input[type='checkbox']:focus-visible,
+input[type='range']:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 button {
-  padding: 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  padding: 0.3rem 0;
+  border: 0;
+  border-radius: 0;
   background: transparent;
-  color: inherit;
-  font: inherit;
+  color: var(--muted);
+  font: 400 0.8125rem/1.2 var(--mono);
+  text-transform: uppercase;
   cursor: pointer;
 }
 
 button:hover {
-  border-color: var(--muted);
+  color: var(--ink);
 }
 
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  font-weight: 600;
-  padding: 7px 18px;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 0.9375rem;
+}
+
+button.primary:hover:not(:disabled)::before,
+.pick:hover::before,
+.pick[aria-current]::before {
+  content: '● ';
 }
 
 button.ghost {
-  border: 0;
-  padding: 2px 6px;
-  color: var(--muted);
+  padding: 0.3rem 0 0.3rem 0.5rem;
+}
+
+button:disabled {
+  cursor: progress;
 }
 
 .row {
   display: flex;
   align-items: end;
-  gap: 8px;
+  gap: 0.5rem 1.5rem;
   flex-wrap: wrap;
 }
 
 .row label {
   display: grid;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
-  width: 90px;
-}
-
-.row .primary {
-  margin-left: auto;
+  gap: 0.25rem;
+  width: 5rem;
 }
 
 .row label.effort {
   flex: 1;
-  min-width: 120px;
+  min-width: 8rem;
 }
 
 .effort strong {
   color: var(--ink);
+  font-weight: 400;
 }
 
 input[type='range'] {
-  padding: 0;
+  width: 100%;
+  height: 1.75rem;
+  margin: 0;
+}
+
+.checks {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.checks label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checks input {
+  margin: 0;
+}
+
+select {
+  padding: 0.2rem 0;
   border: 0;
-  height: 30px;
-  accent-color: var(--accent);
+  border-bottom: 1px solid var(--faint);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 0.8125rem/1.35 var(--mono);
 }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: progress;
+select:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
-.progress {
-  margin-bottom: 16px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
+/* History and candidates: a stack of lines, the chosen one marked with a dot. */
+.stack {
+  display: grid;
+  gap: 0.27rem;
+}
+
+.stack .bar {
+  font-size: 0.8125rem;
+}
+
+main .stack .bar {
+  font-size: 0.9375rem;
+}
+
+.pick {
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+}
+
+.stack .bar > :first-child,
+.stack .bar > :last-child {
+  color: var(--muted);
+}
+
+.stack .ghost {
+  padding: 0 0 0 0.5rem;
+  font: inherit;
+}
+
+.progress,
+.summary,
+main .stack,
+.stats,
+.notice {
+  margin-bottom: 1.5rem;
+}
+
+.progress,
+.summary,
+.stats,
+.key,
+.offcuts,
+.sequence {
   font-variant-numeric: tabular-nums;
 }
 
 .progress progress {
   display: block;
   width: 100%;
-  height: 8px;
-  accent-color: var(--accent);
+  height: 3px;
+  margin: 0.6rem 0;
+  appearance: none;
+  border: 0;
+  background: var(--faint);
+  color: var(--ink);
 }
 
-.progress p {
-  margin: 8px 0 0;
+.progress progress::-webkit-progress-bar {
+  background: var(--faint);
+}
+
+.progress progress::-webkit-progress-value {
+  background: var(--ink);
+}
+
+.progress progress::-moz-progress-bar {
+  background: var(--ink);
+}
+
+.progress p,
+.summary,
+.offcuts {
   color: var(--muted);
 }
 
 .progress strong,
 .summary strong {
   color: var(--ink);
+  font-weight: 400;
 }
 
 .progress button {
-  margin-top: 10px;
+  margin-top: 0.4rem;
+}
+
+.dot {
+  animation: blink 0.8s steps(1) infinite;
 }
 
 .summary {
-  margin: 0 0 14px;
-  padding: 6px 10px;
-  border-left: 3px solid var(--accent);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  animation: landed 1.2s ease-out;
+  animation: blink 0.2s steps(1) 3;
 }
 
-@keyframes landed {
-  from {
-    background: color-mix(in srgb, var(--accent) 35%, transparent);
-  }
-  to {
-    background: transparent;
+@keyframes blink {
+  50% {
+    opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .dot,
   .summary {
     animation: none;
   }
 }
 
-.chips {
+/* Figures set as running text: a grey label, then its value. */
+.stats {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-
-.chips h2 {
-  margin: 0 6px 0 0;
-  width: 56px;
-}
-
-.chip {
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-  overflow: hidden;
-}
-
-.chip button {
-  border: 0;
-  border-radius: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.chip.active {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 1px;
-  margin: 0 0 16px;
-  background: var(--line);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow: hidden;
+  gap: 0.2rem 1.5em;
+  margin-top: 0;
 }
 
 .stats div {
-  background: var(--panel);
-  padding: 10px 12px;
-}
-
-dt {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
 }
 
 dd {
-  margin: 2px 0 0;
-  font-size: 17px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  margin: 0;
 }
 
-.empty,
-.notice {
+.empty {
   color: var(--muted);
 }
 
-.notice {
-  padding: 8px 12px;
-  border: 1px dashed var(--line);
-  border-radius: 6px;
+.notice button {
+  margin-left: 1em;
 }
 
 .notice.warn {
-  border-color: var(--accent);
-  color: var(--accent);
+  font-weight: 600;
 }
 
 .sheet {
-  margin: 0 0 24px;
+  margin: 0 0 3rem;
   break-inside: avoid;
 }
 
-figcaption {
-  margin-bottom: 6px;
-  color: var(--muted);
-}
-
-figcaption strong {
-  color: var(--ink);
+.sheet figcaption {
+  margin-bottom: 0.6rem;
 }
 
 svg {
   display: block;
   width: 100%;
   max-height: 75vh;
+  cursor: crosshair;
 }
 
 .board {
-  fill: var(--board);
+  fill: var(--bg);
   stroke: var(--ink);
 }
 
@@ -354,7 +453,26 @@ svg {
 }
 
 .part {
-  stroke: #1f1d1a;
+  fill: var(--bg);
+  stroke: var(--ink);
+}
+
+.band {
+  fill: none;
+}
+
+.motif {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.motif .solid {
+  fill: var(--ink);
+  fill-opacity: 0.55;
+  stroke: none;
 }
 
 .board,
@@ -367,11 +485,19 @@ svg {
 text {
   text-anchor: middle;
   dominant-baseline: central;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family: var(--mono);
 }
 
 .part-label {
-  fill: #1f1d1a;
+  fill: var(--ink);
+  stroke: none;
+}
+
+/* The outline keeps a label readable over its part's pattern. */
+.mono .part-label {
+  stroke: var(--bg);
+  stroke-linejoin: round;
+  paint-order: stroke;
 }
 
 .offcut-label {
@@ -381,35 +507,29 @@ text {
 .key {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  margin: 8px 0 0;
+  gap: 0.2rem 1.5em;
+  margin: 0.6rem 0 0;
   padding: 0;
   list-style: none;
-  font-variant-numeric: tabular-nums;
 }
 
-.swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-right: 5px;
-  border: 1px solid #1f1d1a;
-  print-color-adjust: exact;
+.key li {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.key .swatch {
+  flex: none;
+  width: 2.4em;
+  height: 1.5em;
+  border: 1px solid var(--ink);
+  overflow: hidden;
+  cursor: auto;
 }
 
 .size {
   color: var(--muted);
-}
-
-.checks {
-  display: grid;
-  gap: 6px;
-}
-
-.checks label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 /* Lets a badge on a cut at the sheet's edge show in full. */
@@ -418,30 +538,29 @@ text {
 }
 
 .cut line {
-  stroke: var(--accent);
+  stroke: var(--ink);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
-.cut circle {
-  fill: var(--panel);
-  stroke: var(--accent);
+.cut rect {
+  fill: var(--bg);
+  stroke: var(--ink);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .cut text {
   fill: var(--ink);
-  font-family: system-ui, sans-serif;
-  font-weight: 600;
+  font-weight: 500;
 }
 
-.cut.stacked circle {
-  fill: var(--accent);
+.cut.stacked rect {
+  fill: var(--ink);
 }
 
 .cut.stacked text {
-  fill: var(--accent-ink);
+  fill: var(--bg);
 }
 
 .cut .fence line {
@@ -457,26 +576,32 @@ text {
 /* The outline keeps the figure readable where it crosses a part label. */
 .cut .fence text {
   fill: var(--ink);
-  stroke: var(--panel);
+  stroke: var(--bg);
   stroke-linejoin: round;
   paint-order: stroke;
 }
 
+.offcuts {
+  margin-top: 0.2rem;
+}
+
 .sequence {
-  margin-top: 8px;
-  font-variant-numeric: tabular-nums;
+  margin-top: 0.9rem;
 }
 
 .sequence summary {
   cursor: pointer;
-  color: var(--muted);
+}
+
+.sequence summary:hover {
+  color: var(--ink);
 }
 
 .sequence ol {
-  margin: 6px 0 0;
+  margin: 0.4rem 0 0;
   padding-left: 2.2em;
   columns: 2 300px;
-  column-gap: 32px;
+  column-gap: 3rem;
 }
 
 .sequence li {
@@ -484,49 +609,58 @@ text {
   padding: 1px 0;
 }
 
-.sequence li.stacked {
-  color: var(--accent);
+.sequence li::marker {
+  font-family: var(--mono);
+  color: var(--muted);
 }
 
-.offcuts {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+.sequence li strong {
+  font-weight: 600;
+}
+
+.sequence li.stacked {
+  font-weight: 600;
 }
 
 @media (max-width: 800px) {
-  .app {
-    grid-template-columns: 1fr;
+  body {
+    font-size: 0.875rem;
   }
 
-  .inputs {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 3rem;
+    padding: 0 0.5rem 3rem;
+  }
+
+  .masthead {
+    margin-bottom: 0;
+  }
+
+  /* Anything smaller makes iOS zoom the page when a field takes focus. */
+  input:not([type='checkbox'], [type='range']) {
+    font-size: 1rem;
   }
 }
 
 @media print {
   :root {
     --bg: #fff;
-    --panel: #fff;
     --ink: #000;
     --muted: #444;
-    --line: #999;
-    --board: #fff;
+    --faint: #999;
     --offcut: #fff;
   }
 
   .app {
     display: block;
+    padding: 0;
   }
 
+  .masthead,
   .inputs,
-  .chips,
+  main .stack,
   .notice:not(.warn) {
     display: none;
-  }
-
-  main {
-    padding: 0;
   }
 }
