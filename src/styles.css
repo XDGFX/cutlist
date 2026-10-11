@@ -169,6 +169,81 @@ button.ghost {
   margin-left: auto;
 }
 
+.row label.effort {
+  flex: 1;
+  min-width: 120px;
+}
+
+.effort strong {
+  color: var(--ink);
+}
+
+input[type='range'] {
+  padding: 0;
+  border: 0;
+  height: 30px;
+  accent-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.progress {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress progress {
+  display: block;
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent);
+}
+
+.progress p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.progress strong,
+.summary strong {
+  color: var(--ink);
+}
+
+.progress button {
+  margin-top: 10px;
+}
+
+.summary {
+  margin: 0 0 14px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  animation: landed 1.2s ease-out;
+}
+
+@keyframes landed {
+  from {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summary {
+    animation: none;
+  }
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;

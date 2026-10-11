@@ -77,12 +77,45 @@ export const MAX_CANDIDATES = 6
 const EPS = 1e-6
 /** Fixed so that a job always yields the same solutions. */
 const SEED = 0x51ab
-/** Randomised packs per job, scaled down as the part count grows. */
-const SEARCH_WORK = 400_000
+/**
+ * Sizes the lowest effort to about a twentieth of a second on a typical laptop, whatever the part
+ * count: a try costs roughly TRY_COST + TRY_COST_PER_ITEM per item, in microseconds.
+ */
+const SEARCH_WORK = 50_000
+const TRY_COST = 10
+const TRY_COST_PER_ITEM = 1.2
 const MIN_ROUNDS = 100
-const MAX_ROUNDS = 5000
-/** How many distinct packings get their cuts worked out before the final ranking. */
-const SHORTLIST = 400
+/** Share of the later rounds spent on fresh random plans rather than on evolving the best ones. */
+const FRESH = 0.15
+/** How many of the best solutions are bred from. */
+const ELITE = 8
+const POOL_MAX = 64
+const POOL_KEEP = 32
+
+/** Search effort levels: each tries `scale` times as many layouts as the first. */
+export const EFFORTS = [
+  { name: 'Instant', scale: 1 },
+  { name: 'Quick', scale: 8 },
+  { name: 'Thorough', scale: 40 },
+  { name: 'Deep', scale: 120 },
+  { name: 'Insane', scale: 280 },
+] as const
+
+export interface SearchStats {
+  tried: number
+  total: number
+  /** How many times a better best solution turned up, and at which try the last one did. */
+  improvements: number
+  lastImprovedAt: number
+}
+
+export interface Search {
+  step(rounds: number): void
+  finished(): boolean
+  stats(): SearchStats
+  /** Distinct candidate solutions found so far, best first. */
+  solutions(): Solution[]
+}
 
 interface Item {
   part: Part
@@ -92,16 +125,20 @@ interface Item {
 
 type Sort = 'area' | 'longest side' | 'perimeter' | 'width'
 type Fit = 'tightest area' | 'tightest side' | 'pack to one end' | 'pack to one edge'
-type Split = 'short leftover' | 'long leftover' | 'rip first' | 'crosscut first' | 'mixed splits'
+type Split = 'short leftover' | 'long leftover' | 'rip first' | 'crosscut first'
 type StockOrder = 'largest stock first' | 'smallest stock first'
 
-interface Strategy {
-  sort: Sort
+/** Everything that decides one packing. Indexed arrays line up with the job's items. */
+interface Plan {
+  origin: string
+  /** Placement priority: the highest goes first. */
+  keys: number[]
+  /** Forced split direction and orientation per item; null leaves it to the rules. */
+  rip: (boolean | null)[]
+  turn: (boolean | null)[]
   fit: Fit
   split: Split
   stockOrder: StockOrder
-  /** How far the sort order may be shuffled: 0 keeps it exact. */
-  jitter: number
 }
 
 const SORT_KEY: Record<Sort, (i: Item) => number> = {
@@ -113,8 +150,7 @@ const SORT_KEY: Record<Sort, (i: Item) => number> = {
 
 const SORTS = Object.keys(SORT_KEY) as Sort[]
 const FITS: Fit[] = ['tightest area', 'tightest side', 'pack to one end', 'pack to one edge']
-const FIXED_SPLITS: Split[] = ['short leftover', 'long leftover', 'rip first', 'crosscut first']
-const SPLITS: Split[] = [...FIXED_SPLITS, 'mixed splits']
+const SPLITS: Split[] = ['short leftover', 'long leftover', 'rip first', 'crosscut first']
 const STOCK_ORDERS: StockOrder[] = ['largest stock first', 'smallest stock first']
 const JITTERS = [0.2, 0.6, 2]
 
@@ -156,16 +192,17 @@ interface Candidate {
   score: [number, number]
 }
 
-function orientations(item: Item): { w: number; h: number; rotated: boolean }[] {
+function orientations(item: Item, turn: boolean | null): { w: number; h: number; rotated: boolean }[] {
   const upright = { w: item.length, h: item.width, rotated: false }
   if (!item.part.canRotate || item.length === item.width) return [upright]
-  return [upright, { w: item.width, h: item.length, rotated: true }]
+  const turned = { w: item.width, h: item.length, rotated: true }
+  return turn === null ? [upright, turned] : [turn ? turned : upright]
 }
 
-function bestFit(sheet: OpenSheet, item: Item, fit: Fit): Candidate | null {
+function bestFit(sheet: OpenSheet, item: Item, fit: Fit, turn: boolean | null): Candidate | null {
   let best: Candidate | null = null
   sheet.free.forEach((f, index) => {
-    for (const o of orientations(item)) {
+    for (const o of orientations(item, turn)) {
       if (o.w > f.w + EPS || o.h > f.h + EPS) continue
       const slack = f.w * f.h - o.w * o.h
       const score: [number, number] =
@@ -183,7 +220,7 @@ function bestFit(sheet: OpenSheet, item: Item, fit: Fit): Candidate | null {
   return best
 }
 
-function place(sheet: OpenSheet, item: Item, c: Candidate, split: Split, kerf: number, rng: Rng) {
+function place(sheet: OpenSheet, item: Item, c: Candidate, rip: boolean | null, split: Split, kerf: number) {
   const [f] = sheet.free.splice(c.index, 1)
   sheet.placements.push({
     partId: item.part.id,
@@ -201,33 +238,28 @@ function place(sheet: OpenSheet, item: Item, c: Candidate, split: Split, kerf: n
   const spareH = f.h - c.h
   // "Rip" is a cut along the sheet's length, made before the crosscut that frees the part.
   const ripFirst =
-    split === 'rip first' ||
-    (split === 'short leftover' && spareW <= spareH) ||
-    (split === 'long leftover' && spareW > spareH) ||
-    (split === 'mixed splits' && rng() < 0.5)
+    rip ??
+    (split === 'rip first' ||
+      (split === 'short leftover' && spareW <= spareH) ||
+      (split === 'long leftover' && spareW > spareH))
 
   const right: Rect = { x: f.x + c.w + kerf, y: f.y, w: spareW - kerf, h: ripFirst ? c.h : f.h }
   const below: Rect = { x: f.x, y: f.y + c.h + kerf, w: ripFirst ? f.w : c.w, h: spareH - kerf }
   for (const r of [right, below]) if (r.w > EPS && r.h > EPS) sheet.free.push(r)
 }
 
-function pack(job: Job, s: Strategy, rng: Rng): Packing {
-  const items: Item[] = job.parts
-    .filter((p) => p.length > 0 && p.width > 0 && p.qty > 0)
-    .flatMap((part) =>
-      Array.from({ length: Math.floor(part.qty) }, () => ({
-        part,
-        length: part.length,
-        width: part.width,
-      })),
+function pack(job: Job, items: Item[], plan: Plan): Packing {
+  const order = items
+    .map((_, i) => i)
+    .sort(
+      (a, b) =>
+        plan.keys[b] - plan.keys[a] || items[b].length * items[b].width - items[a].length * items[a].width,
     )
-  const keys = new Map(items.map((i) => [i, SORT_KEY[s.sort](i) * (1 + s.jitter * (rng() - 0.5))]))
-  items.sort((a, b) => keys.get(b)! - keys.get(a)! || b.length * b.width - a.length * a.width)
 
   const stock = job.stock
     .filter((st) => st.length > 0 && st.width > 0 && st.qty > 0)
     .sort((a, b) =>
-      s.stockOrder === 'largest stock first'
+      plan.stockOrder === 'largest stock first'
         ? b.length * b.width - a.length * a.width
         : a.length * a.width - b.length * b.width,
     )
@@ -236,36 +268,35 @@ function pack(job: Job, s: Strategy, rng: Rng): Packing {
   const sheets: OpenSheet[] = []
   const unplaced = new Map<string, Unplaced>()
 
-  for (const item of items) {
-    let done = false
-    for (const sheet of sheets) {
-      const c = bestFit(sheet, item, s.fit)
-      if (c) {
-        place(sheet, item, c, s.split, job.kerf, rng)
-        done = true
-        break
+  for (const i of order) {
+    const item = items[i]
+    const tryPlace = (turn: boolean | null): boolean => {
+      for (const sheet of sheets) {
+        const c = bestFit(sheet, item, plan.fit, turn)
+        if (!c) continue
+        place(sheet, item, c, plan.rip[i], plan.split, job.kerf)
+        return true
       }
-    }
-    if (done) continue
-
-    for (const st of stock) {
-      if (!remaining.get(st.id)) continue
-      const sheet: OpenSheet = {
-        stock: st,
-        placements: [],
-        free: [{ x: 0, y: 0, w: st.length, h: st.width }],
-        reachX: 0,
-        reachY: 0,
+      for (const st of stock) {
+        if (!remaining.get(st.id)) continue
+        const sheet: OpenSheet = {
+          stock: st,
+          placements: [],
+          free: [{ x: 0, y: 0, w: st.length, h: st.width }],
+          reachX: 0,
+          reachY: 0,
+        }
+        const c = bestFit(sheet, item, plan.fit, turn)
+        if (!c) continue
+        remaining.set(st.id, remaining.get(st.id)! - 1)
+        sheets.push(sheet)
+        place(sheet, item, c, plan.rip[i], plan.split, job.kerf)
+        return true
       }
-      const c = bestFit(sheet, item, s.fit)
-      if (!c) continue
-      remaining.set(st.id, remaining.get(st.id)! - 1)
-      sheets.push(sheet)
-      place(sheet, item, c, s.split, job.kerf, rng)
-      done = true
-      break
+      return false
     }
-    if (done) continue
+    // A forced orientation that fits nowhere gives way rather than losing the part.
+    if (tryPlace(plan.turn[i]) || (plan.turn[i] !== null && tryPlace(null))) continue
 
     const u = unplaced.get(item.part.id) ?? { partId: item.part.id, name: item.part.name, qty: 0 }
     u.qty++
@@ -273,7 +304,7 @@ function pack(job: Job, s: Strategy, rng: Rng): Packing {
   }
 
   return {
-    strategy: `${s.sort}${s.jitter ? ' (shuffled)' : ''} · ${s.fit} · ${s.split} · ${s.stockOrder}`,
+    strategy: `${plan.origin} · ${plan.fit} · ${plan.split} · ${plan.stockOrder}`,
     sheets,
     unplaced: [...unplaced.values()],
     unplacedQty: sum([...unplaced.values()], (u) => u.qty),
@@ -384,20 +415,6 @@ function consolidation(s: Solution): number {
   return sum(s.layouts, (l) => sum(l.offcuts, (r) => (r.w * r.h) ** 2))
 }
 
-function signature(p: Packing): string {
-  return p.sheets
-    .map(
-      (sh) =>
-        `${sh.stock.id}:` +
-        sh.placements
-          .map((pl) => `${pl.partId}@${pl.x},${pl.y},${pl.w},${pl.h}`)
-          .sort()
-          .join(';'),
-    )
-    .sort()
-    .join('|')
-}
-
 /** Solutions that leave the same main offcut on each sheet are one option; the best of them is kept. */
 function mainOffcuts(s: Solution): string {
   return s.layouts
@@ -406,12 +423,8 @@ function mainOffcuts(s: Solution): string {
     .join('|')
 }
 
-function stockUse(a: Packing, b: Packing): number {
-  return a.unplacedQty - b.unplacedQty || a.stockArea - b.stockArea || a.sheets.length - b.sheets.length
-}
-
 /** Best first: fewest parts left over, least stock consumed, then the most reusable leftover. */
-function rank(a: Solution, b: Solution): number {
+export function compareSolutions(a: Solution, b: Solution): number {
   return (
     a.stats.unplaced - b.stats.unplaced ||
     a.stats.stockArea - b.stats.stockArea ||
@@ -421,44 +434,146 @@ function rank(a: Solution, b: Solution): number {
   )
 }
 
-/** Distinct candidate solutions for a job, best first. Deterministic for a given job. */
-export function optimise(job: Job): Solution[] {
+interface Entry {
+  solution: Solution
+  plan: Plan
+}
+
+/**
+ * A search that can be advanced a few tries at a time. It runs the fixed heuristics, then random
+ * plans, then evolves the best plans found. Deterministic for a given job and effort, however
+ * the tries are batched.
+ */
+export function createSearch(job: Job, effort = 0): Search {
   const rng = mulberry32(SEED)
-  const pick = <T>(xs: T[]) => xs[Math.floor(rng() * xs.length)]
-  const packings = new Map<string, Packing>()
-  const consider = (s: Strategy) => {
-    const packing = pack(job, s, rng)
-    const sig = signature(packing)
-    if (!packings.has(sig)) packings.set(sig, packing)
-  }
+  const pick = <T>(xs: readonly T[]) => xs[Math.floor(rng() * xs.length)]
 
-  for (const sort of SORTS)
-    for (const fit of FITS)
-      for (const split of FIXED_SPLITS)
-        for (const stockOrder of STOCK_ORDERS) consider({ sort, fit, split, stockOrder, jitter: 0 })
+  const items: Item[] = job.parts
+    .filter((p) => p.length > 0 && p.width > 0 && p.qty > 0)
+    .flatMap((part) =>
+      Array.from({ length: Math.floor(part.qty) }, () => ({ part, length: part.length, width: part.width })),
+    )
+  const n = items.length
+  const unforced = items.map(() => null)
 
-  const count = sum(job.parts, (p) => Math.max(0, Math.floor(p.qty)))
-  const rounds = Math.min(MAX_ROUNDS, Math.max(MIN_ROUNDS, Math.floor(SEARCH_WORK / (count * count || 1))))
-  for (let i = 0; i < rounds; i++)
-    consider({
-      sort: pick(SORTS),
+  const fixed: Plan[] = SORTS.flatMap((sort) =>
+    FITS.flatMap((fit) =>
+      SPLITS.flatMap((split) =>
+        STOCK_ORDERS.map((stockOrder) => ({
+          origin: sort,
+          keys: items.map(SORT_KEY[sort]),
+          rip: unforced,
+          turn: unforced,
+          fit,
+          split,
+          stockOrder,
+        })),
+      ),
+    ),
+  )
+  const base = n ? Math.max(MIN_ROUNDS, Math.floor(SEARCH_WORK / (TRY_COST + TRY_COST_PER_ITEM * n))) : 0
+  const randomUntil = fixed.length + base
+  const total = fixed.length + base * EFFORTS[effort].scale
+
+  const pool = new Map<string, Entry>()
+  let elite: Entry[] = []
+  let eliteStale = false
+  let best: Solution | null = null
+  let tried = 0
+  let improvements = 0
+  let lastImprovedAt = 0
+
+  const ranked = () => [...pool.values()].sort((a, b) => compareSolutions(a.solution, b.solution))
+
+  const randomPlan = (): Plan => {
+    const sort = pick(SORTS)
+    const jitter = pick(JITTERS)
+    const mixed = rng() < 0.2
+    return {
+      origin: `${sort} (shuffled)`,
+      keys: items.map((i) => SORT_KEY[sort](i) * (1 + jitter * (rng() - 0.5))),
+      rip: mixed ? items.map(() => rng() < 0.5) : unforced,
+      turn: unforced,
       fit: pick(FITS),
       split: pick(SPLITS),
       stockOrder: pick(STOCK_ORDERS),
-      jitter: pick(JITTERS),
-    })
+    }
+  }
 
-  const seen = new Set<string>()
-  return [...packings.values()]
-    .sort(stockUse)
-    .slice(0, SHORTLIST)
-    .map((p) => finish(p, job.kerf))
-    .sort(rank)
-    .filter((s) => {
-      const key = mainOffcuts(s)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    .slice(0, MAX_CANDIDATES)
+  const mutate = (parent: Plan): Plan => {
+    const child = { ...parent, origin: 'evolved', keys: [...parent.keys], rip: [...parent.rip], turn: [...parent.turn] }
+    for (let changes = 1 + Math.floor(rng() * 3); changes > 0; changes--) {
+      const i = Math.floor(rng() * n)
+      const j = Math.floor(rng() * n)
+      const kind = rng()
+      if (kind < 0.3) [child.keys[i], child.keys[j]] = [child.keys[j], child.keys[i]]
+      // Moves item i to sit next to item j in the order.
+      else if (kind < 0.45) child.keys[i] = child.keys[j] * (1 + 0.01 * (rng() - 0.5))
+      else if (kind < 0.65) child.rip[i] = pick([true, false, null])
+      else if (kind < 0.85) child.turn[i] = pick([true, false, null])
+      else if (kind < 0.95) child.fit = pick(FITS)
+      else child.split = pick(SPLITS)
+    }
+    return child
+  }
+
+  const consider = (plan: Plan) => {
+    tried++
+    const packing = pack(job, items, plan)
+    // Working out the cuts is the expensive part, so skip packings that already use more stock.
+    if (
+      best &&
+      pool.size >= MAX_CANDIDATES &&
+      (packing.unplacedQty - best.stats.unplaced ||
+        packing.stockArea - best.stats.stockArea ||
+        packing.sheets.length - best.stats.sheets) > 0
+    )
+      return
+
+    const solution = finish(packing, job.kerf)
+    const key = mainOffcuts(solution)
+    const held = pool.get(key)
+    if (held && compareSolutions(solution, held.solution) >= 0) return
+    pool.set(key, { solution, plan })
+    eliteStale = true
+    if (!best || compareSolutions(solution, best) < 0) {
+      best = solution
+      improvements++
+      lastImprovedAt = tried
+    }
+    if (pool.size > POOL_MAX) {
+      const keep = ranked().slice(0, POOL_KEEP)
+      pool.clear()
+      for (const entry of keep) pool.set(mainOffcuts(entry.solution), entry)
+    }
+  }
+
+  return {
+    step(rounds) {
+      for (let i = 0; i < rounds && tried < total; i++) {
+        if (tried < fixed.length) consider(fixed[tried])
+        else if (tried < randomUntil || rng() < FRESH) consider(randomPlan())
+        else {
+          if (eliteStale) {
+            elite = ranked().slice(0, ELITE)
+            eliteStale = false
+          }
+          consider(mutate(pick(elite).plan))
+        }
+      }
+    },
+    finished: () => tried >= total,
+    stats: () => ({ tried, total, improvements, lastImprovedAt }),
+    solutions: () =>
+      ranked()
+        .slice(0, MAX_CANDIDATES)
+        .map((entry) => entry.solution),
+  }
+}
+
+/** Distinct candidate solutions for a job, best first. */
+export function optimise(job: Job, effort = 0): Solution[] {
+  const search = createSearch(job, effort)
+  while (!search.finished()) search.step(1024)
+  return search.solutions()
 }

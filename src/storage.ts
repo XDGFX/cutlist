@@ -1,17 +1,26 @@
-import type { Job } from './optimiser'
+import type { Job, SearchStats, Solution } from './optimiser'
+
+export interface SearchSummary extends SearchStats {
+  ms: number
+}
 
 export interface Run {
   id: string
   at: number
   job: Job
-  /** Index of the chosen candidate among the job's solutions. */
+  /** Index of the chosen candidate among the run's solutions. */
   pick: number
+  effort?: number
+  /** Missing on runs saved before solutions were stored, and on old runs shed to fit storage. */
+  solutions?: Solution[]
+  search?: SearchSummary
 }
 
 export interface Saved {
   job: Job
   runs: Run[]
   activeRun: string | null
+  effort?: number
 }
 
 export const MAX_RUNS = 30
@@ -45,10 +54,18 @@ export function load(): Saved {
 }
 
 export function save(saved: Saved) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(saved))
-  } catch {
-    // Private windows and full quotas still get a working page.
+  let runs = saved.runs
+  // Stored solutions are the bulk of the data, so a full quota sheds them from the oldest run first.
+  for (;;) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ ...saved, runs }))
+      return
+    } catch {
+      const oldest = runs.findLastIndex((r) => r.solutions)
+      // Private windows and quotas too small for even the inputs still get a working page.
+      if (oldest < 0) return
+      runs = runs.map((r, i) => (i === oldest ? { ...r, solutions: undefined } : r))
+    }
   }
 }
 

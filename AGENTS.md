@@ -5,7 +5,8 @@ Deployed to GitHub Pages by `.github/workflows/deploy.yml` on every push to `mai
 
 - Domain terms are in `GLOSSARY.md`. Use them in code and prose.
 - `src/optimiser.ts` is pure and has no DOM or storage access. Keep it that way.
-- A run stores its job, not its solutions: `optimise` must stay deterministic for a given job.
+- The search is seeded and counts tries, never time, so a job and effort always give the same
+  solutions. The page runs it in `src/search.worker.ts`; a run stores the solutions it found.
 
 ## Gates
 
