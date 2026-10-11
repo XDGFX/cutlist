@@ -26,6 +26,8 @@ export interface Saved {
   effort?: number
   showCuts?: boolean
   partFill?: PartFill
+  /** Whether the stock and parts tables offer a name to fill in. */
+  showNames?: boolean
 }
 
 export const MAX_RUNS = 30
