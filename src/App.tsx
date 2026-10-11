@@ -1243,6 +1243,9 @@ function Sheet({
             </g>
           )
         })}
+        {/* A band reaches its part's edge, so the outlines go over every band. */}
+        {fill === 'colour' &&
+          layout.placements.map((p, i) => <rect key={`e${i}`} className="part edge" x={p.x} y={p.y} width={p.w} height={p.h} />)}
         {sequence.map((c, i) => {
           if (detail && !clip({ x: c.x1 - 1, y: c.y1 - 1, w: c.x2 - c.x1 + 2, h: c.y2 - c.y1 + 2 }, view)) return null
           const numbered = showCuts && home[i] === id

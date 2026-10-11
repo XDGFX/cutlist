@@ -837,8 +837,13 @@ svg {
   stroke: var(--ink);
 }
 
-.band {
+.band,
+.edge {
   fill: none;
+}
+
+.edge {
+  pointer-events: none;
 }
 
 .motif {
