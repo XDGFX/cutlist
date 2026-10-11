@@ -64,6 +64,9 @@ export interface Layout {
   sequence: Cut[]
   /** How many part dimensions are a remainder rather than set by their own cut. */
   stacked: number
+  fenceMoves: number
+  /** How many cuts that size a part follow a narrower one running the same way. */
+  narrowFirst: number
 }
 
 export interface Unplaced {
@@ -83,6 +86,8 @@ export interface Stats {
   cuts: number
   cutLength: number
   stacked: number
+  fenceMoves: number
+  narrowFirst: number
 }
 
 export interface Solution {
@@ -336,9 +341,19 @@ function pack(job: Job, items: Item[], plan: Plan): Packing {
   }
 }
 
+/** A cut and the cuts that can only be made once it has freed their piece. */
+interface Step {
+  cut: Cut
+  setting: number
+  then: Step[]
+  /** How many cuts, this one included, can follow one another from here without a fence move. */
+  run: number
+}
+
 interface Cutting {
   offcuts: Rect[]
-  sequence: Cut[]
+  steps: Step[]
+  cuts: number
   stacked: number
 }
 
@@ -360,15 +375,15 @@ function worth(offcuts: Rect[]): number {
 }
 
 /**
- * Works out guillotine cuts that free every part in a region, in the order to make them.
+ * Works out guillotine cuts that free every part in a region.
  *
- * In safe mode it takes cuts that size parts directly off an edge first and leaves freeing the
- * leftover until it can no longer turn a run of parts into an exact fit, so that accumulated
- * error ends up in the offcut. Otherwise it always frees the largest empty piece first.
+ * It takes cuts that size parts directly off an edge first and leaves freeing the leftover until
+ * it can no longer turn a run of parts into an exact fit, so that accumulated error ends up in the
+ * offcut.
  */
-function cutUp(parts: Placement[], region: Rect, kerf: number, safe: boolean, lookahead: { left: number }): Cutting {
+function cutUp(parts: Placement[], region: Rect, kerf: number, lookahead: { left: number }): Cutting {
   if (parts.length === 0)
-    return { offcuts: region.w > EPS && region.h > EPS ? [region] : [], sequence: [], stacked: 0 }
+    return { offcuts: region.w > EPS && region.h > EPS ? [region] : [], steps: [], cuts: 0, stacked: 0 }
 
   const best: (Option | undefined)[] = []
   for (const vertical of [true, false]) {
@@ -407,7 +422,7 @@ function cutUp(parts: Placement[], region: Rect, kerf: number, safe: boolean, lo
       if (blocked) continue
 
       const empty = !before ? (at - start) * length : !after ? Math.max(0, end - at - kerf) * length : 0
-      const kind = !safe ? 0 : spanBefore && spanAfter ? 3 : spanBefore || spanAfter ? 0 : !before || !after ? 1 : 2
+      const kind = spanBefore && spanAfter ? 3 : spanBefore || spanAfter ? 0 : !before || !after ? 1 : 2
       const held = best[kind]
       if (!held || empty > held.empty || (empty === held.empty && length > held.length))
         best[kind] = { vertical, at, kind, empty, length }
@@ -444,11 +459,14 @@ function cutUp(parts: Placement[], region: Rect, kerf: number, safe: boolean, lo
       remainder: names(remainder),
     }
 
-    const a = cutUp(partsFirst, first, kerf, safe, lookahead)
-    const b = cutUp(partsSecond, second, kerf, safe, lookahead)
+    const a = cutUp(partsFirst, first, kerf, lookahead)
+    const b = cutUp(partsSecond, second, kerf, lookahead)
+    const then = [...a.steps, ...b.steps]
+    const set = setting(cut)
     return {
       offcuts: [...a.offcuts, ...b.offcuts],
-      sequence: [cut, ...a.sequence, ...b.sequence],
+      steps: [{ cut, setting: set, then, run: 1 + sum(then, (s) => (s.setting === set ? s.run : 0)) }],
+      cuts: 1 + a.cuts + b.cuts,
       stacked: remainder.length + a.stacked + b.stacked,
     }
   }
@@ -462,17 +480,75 @@ function cutUp(parts: Placement[], region: Rect, kerf: number, safe: boolean, lo
     const a = make(freeing)
     const b = make(separating)
     const order =
-      a.stacked - b.stacked || worth(b.offcuts) - worth(a.offcuts) || a.sequence.length - b.sequence.length
+      a.stacked - b.stacked || worth(b.offcuts) - worth(a.offcuts) || a.cuts - b.cuts
     return order <= 0 ? a : b
   }
   const next = separating ?? freeing ?? exact
   // A part that fills its region needs no further cut.
-  return next ? make(next) : { offcuts: [], sequence: [], stacked: 0 }
+  return next ? make(next) : { offcuts: [], steps: [], cuts: 0, stacked: 0 }
 }
 
-function finish(packing: Packing, kerf: number, safe: boolean): Solution {
+/** A cut's fence distance and reference edge as one number: cuts that share it need no fence move. */
+function setting(cut: Cut): number {
+  return Math.round(cut.fence * 1000) * 2 + (cut.far ? 1 : 0)
+}
+
+/**
+ * Puts a sheet's cuts in the order to make them. While any cut that is ready shares the fence
+ * setting, it comes next, even on another piece. Otherwise the fence moves to a setting it will
+ * not have to come back to, widest first.
+ */
+function inOrder(steps: Step[]): Cut[] {
+  const waiting = new Map<number, number>()
+  const count = (step: Step) => {
+    waiting.set(step.setting, (waiting.get(step.setting) ?? 0) + 1)
+    step.then.forEach(count)
+  }
+  steps.forEach(count)
+
+  const ready = [...steps]
+  const sequence: Cut[] = []
+  let current = NaN
+  while (ready.length) {
+    let next = ready.findIndex((step) => step.setting === current)
+    if (next < 0) {
+      const readyAt = new Map<number, number>()
+      for (const step of ready) readyAt.set(step.setting, (readyAt.get(step.setting) ?? 0) + step.run)
+      const whole = (step: Step) => (readyAt.get(step.setting) === waiting.get(step.setting) ? 1 : 0)
+      next = 0
+      for (let i = 1; i < ready.length; i++)
+        if ((whole(ready[i]) - whole(ready[next]) || ready[i].cut.fence - ready[next].cut.fence) > 0) next = i
+    }
+    const step = ready[next]
+    // The cuts it frees take its place, so that a piece is finished before the next is started.
+    ready.splice(next, 1, ...step.then)
+    waiting.set(step.setting, waiting.get(step.setting)! - 1)
+    current = step.setting
+    sequence.push(step.cut)
+  }
+  return sequence
+}
+
+function fenceMoves(sequence: Cut[]): number {
+  return sequence.filter((cut, i) => i === 0 || setting(cut) !== setting(sequence[i - 1])).length
+}
+
+function narrowFirst(sequence: Cut[]): number {
+  const narrowest = { rip: Infinity, crosscut: Infinity }
+  let count = 0
+  for (const cut of sequence) {
+    if (!cut.sizes.length) continue
+    const way = cut.rip ? 'rip' : 'crosscut'
+    if (cut.fence > narrowest[way] + EPS) count++
+    narrowest[way] = Math.min(narrowest[way], cut.fence)
+  }
+  return count
+}
+
+function finish(packing: Packing, kerf: number): Solution {
   const layouts: Layout[] = packing.sheets.map(({ stock, placements }) => {
-    const cutting = cutUp(placements, { x: 0, y: 0, w: stock.length, h: stock.width }, kerf, safe, { left: LOOKAHEAD })
+    const cutting = cutUp(placements, { x: 0, y: 0, w: stock.length, h: stock.width }, kerf, { left: LOOKAHEAD })
+    const sequence = inOrder(cutting.steps)
     return {
       stockId: stock.id,
       stockName: stock.name,
@@ -482,10 +558,12 @@ function finish(packing: Packing, kerf: number, safe: boolean): Solution {
       offcuts: cutting.offcuts
         .filter((r) => Math.min(r.w, r.h) >= MIN_OFFCUT_SIDE)
         .sort((a, b) => b.w * b.h - a.w * a.h),
-      cuts: cutting.sequence.length,
-      cutLength: sum(cutting.sequence, (c) => c.x2 - c.x1 + c.y2 - c.y1),
-      sequence: cutting.sequence,
+      cuts: sequence.length,
+      cutLength: sum(sequence, (c) => c.x2 - c.x1 + c.y2 - c.y1),
+      sequence,
       stacked: cutting.stacked,
+      fenceMoves: fenceMoves(sequence),
+      narrowFirst: narrowFirst(sequence),
     }
   })
 
@@ -506,6 +584,8 @@ function finish(packing: Packing, kerf: number, safe: boolean): Solution {
       cuts: sum(layouts, (l) => l.cuts),
       cutLength: sum(layouts, (l) => l.cutLength),
       stacked: sum(layouts, (l) => l.stacked),
+      fenceMoves: sum(layouts, (l) => l.fenceMoves),
+      narrowFirst: sum(layouts, (l) => l.narrowFirst),
     },
   }
 }
@@ -528,16 +608,25 @@ function mainOffcuts(s: Solution): string {
 }
 
 /**
- * Best first: fewest parts left over, least stock consumed, then (in safe mode) fewest remainder
- * dimensions, then the most reusable leftover.
+ * Fewest parts left over, least stock consumed, then fewest remainder dimensions: what a solution
+ * must not give up to be easier to cut.
  */
-export function compareSolutions(a: Solution, b: Solution, safe = true): number {
+function compareNeeds(a: Solution, b: Solution): number {
   return (
     a.stats.unplaced - b.stats.unplaced ||
     a.stats.stockArea - b.stats.stockArea ||
     a.stats.sheets - b.stats.sheets ||
-    (safe ? a.stats.stacked - b.stats.stacked : 0) ||
+    a.stats.stacked - b.stats.stacked
+  )
+}
+
+/** Best first: what a solution needs, then fewest fence moves, then the most reusable leftover. */
+export function compareSolutions(a: Solution, b: Solution): number {
+  return (
+    compareNeeds(a, b) ||
+    a.stats.fenceMoves - b.stats.fenceMoves ||
     consolidation(b) - consolidation(a) ||
+    a.stats.narrowFirst - b.stats.narrowFirst ||
     a.stats.cuts - b.stats.cuts
   )
 }
@@ -552,8 +641,7 @@ interface Entry {
  * plans, then evolves the best plans found. Deterministic for a given job and effort, however
  * the tries are batched.
  */
-export function createSearch(job: Job, effort = 0, safe = true): Search {
-  const compare = (a: Solution, b: Solution) => compareSolutions(a, b, safe)
+export function createSearch(job: Job, effort = 0): Search {
   const rng = mulberry32(SEED)
   const pick = <T>(xs: readonly T[]) => xs[Math.floor(rng() * xs.length)]
 
@@ -592,7 +680,21 @@ export function createSearch(job: Job, effort = 0, safe = true): Search {
   let improvements = 0
   let lastImprovedAt = 0
 
-  const ranked = () => [...pool.values()].sort((a, b) => compare(a.solution, b.solution))
+  const ranked = () => [...pool.values()].sort((a, b) => compareSolutions(a.solution, b.solution))
+
+  /**
+   * The best `limit` entries. The last gives way to the one with the most reusable leftover among
+   * those that need no more than the best, so that fewer fence moves never hide it.
+   */
+  const leading = (limit: number): Entry[] => {
+    const all = ranked()
+    const top = all.slice(0, limit)
+    const roomiest = all
+      .filter((e) => compareNeeds(e.solution, all[0].solution) === 0)
+      .reduce((a, b) => (consolidation(b.solution) > consolidation(a.solution) ? b : a), all[0])
+    if (roomiest && !top.includes(roomiest)) top[top.length - 1] = roomiest
+    return top
+  }
 
   const randomPlan = (): Plan => {
     const sort = pick(SORTS)
@@ -639,19 +741,19 @@ export function createSearch(job: Job, effort = 0, safe = true): Search {
     )
       return
 
-    const solution = finish(packing, job.kerf, safe)
+    const solution = finish(packing, job.kerf)
     const key = mainOffcuts(solution)
     const held = pool.get(key)
-    if (held && compare(solution, held.solution) >= 0) return
+    if (held && compareSolutions(solution, held.solution) >= 0) return
     pool.set(key, { solution, plan })
     eliteStale = true
-    if (!best || compare(solution, best) < 0) {
+    if (!best || compareSolutions(solution, best) < 0) {
       best = solution
       improvements++
       lastImprovedAt = tried
     }
     if (pool.size > POOL_MAX) {
-      const keep = ranked().slice(0, POOL_KEEP)
+      const keep = leading(POOL_KEEP)
       pool.clear()
       for (const entry of keep) pool.set(mainOffcuts(entry.solution), entry)
     }
@@ -673,16 +775,13 @@ export function createSearch(job: Job, effort = 0, safe = true): Search {
     },
     finished: () => tried >= total,
     stats: () => ({ tried, total, improvements, lastImprovedAt }),
-    solutions: () =>
-      ranked()
-        .slice(0, MAX_CANDIDATES)
-        .map((entry) => entry.solution),
+    solutions: () => leading(MAX_CANDIDATES).map((entry) => entry.solution),
   }
 }
 
 /** Distinct candidate solutions for a job, best first. */
-export function optimise(job: Job, effort = 0, safe = true): Solution[] {
-  const search = createSearch(job, effort, safe)
+export function optimise(job: Job, effort = 0): Solution[] {
+  const search = createSearch(job, effort)
   while (!search.finished()) search.step(1024)
   return search.solutions()
 }
