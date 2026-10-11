@@ -25,7 +25,6 @@ export interface Saved {
   activeRun: string | null
   effort?: number
   showCuts?: boolean
-  showFences?: boolean
   partFill?: PartFill
 }
 
