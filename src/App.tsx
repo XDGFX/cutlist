@@ -27,6 +27,7 @@ import { Icon } from './Icon'
 import { asksToCalculate, enterTo, neighbour, stepTo } from './keys'
 import type { SearchRequest, Update } from './search.worker'
 import {
+  FILLS,
   jobFromHash,
   jobToHash,
   load,
@@ -181,9 +182,9 @@ export function App() {
   const worker = useRef<Worker | null>(null)
   const { job, runs } = state
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
-  const showCuts = state.showCuts ?? true
+  const showCuts = state.showCuts ?? false
   const partFill = state.partFill ?? 'mono'
-  const showNames = state.showNames ?? true
+  const showNames = state.showNames ?? false
   /** The field a new row is entered from. */
   const firstCol = showNames ? 'name' : 'length'
   const [status, setStatus] = useState('')
@@ -568,17 +569,22 @@ export function App() {
             />
             Number the cuts on the drawing
           </label>
-          <label>
-            Part fill
-            <select
-              value={partFill}
-              onChange={(e) => setState((s) => ({ ...s, partFill: e.target.value as PartFill }))}
-            >
-              <option value="none">None</option>
-              <option value="mono">Mono hatch</option>
-              <option value="colour">Colour</option>
-            </select>
-          </label>
+          <div className="fills">
+            <span id="fill">Part fill</span>
+            <div className="letters" role="radiogroup" aria-labelledby="fill">
+              {FILLS.map((fill) => (
+                <label key={fill}>
+                  <input
+                    type="radio"
+                    name="fill"
+                    checked={fill === partFill}
+                    onChange={() => setState((s) => ({ ...s, partFill: fill }))}
+                  />
+                  <span>{fill}</span>
+                </label>
+              ))}
+            </div>
+          </div>
           </section>
         </details>
 
