@@ -7,6 +7,7 @@
   --mono: 'DM Mono', ui-monospace, Menlo, monospace;
   --title: 'VT323', var(--mono);
   --heading: 'Doto', var(--mono);
+  --heading-size: 1.05rem;
   color-scheme: light dark;
 }
 
@@ -170,7 +171,7 @@ h3 {
 .sheet figcaption,
 .fold summary,
 .sequence summary {
-  font: 900 1.05rem/1.2 var(--heading);
+  font: 900 var(--heading-size) / 1.2 var(--heading);
 }
 
 main {
@@ -326,16 +327,14 @@ summary::-webkit-details-marker {
   display: none;
 }
 
-/* The same plus as the buttons that add a row. */
-.fold summary::before,
-.sequence summary::before {
-  content: '+ ';
-  white-space: pre;
-  font: 400 0.875rem/1 var(--mono);
+/* Sits on the baseline, its rows in line with the rows of the letters. */
+summary .icon {
+  vertical-align: 0;
 }
 
-details[open] > summary::before {
-  content: '− ';
+details[open] > summary [data-icon='plus'],
+details:not([open]) > summary [data-icon='minus'] {
+  display: none;
 }
 
 th {
@@ -458,6 +457,29 @@ button.primary {
 
 button.ghost {
   padding: 0.3rem 0 0.3rem 0.5rem;
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+/* Set at the size of the headings, so its dots are the size of theirs. */
+.icon {
+  display: inline-block;
+  flex: none;
+  font-size: var(--heading-size);
+  vertical-align: -0.08em;
+  overflow: visible;
+  cursor: inherit;
+  fill: currentColor;
 }
 
 button[aria-disabled='true'] {
