@@ -106,6 +106,43 @@ describe('optimise', () => {
     expect(solution.layouts[0].offcuts).toEqual([{ x: 400, y: 0, w: 600, h: 500 }])
   })
 
+  it('cuts an L-shaped leftover so that the larger piece comes off whole', () => {
+    const [solution] = optimise({
+      kerf: 0,
+      stock: [sheet({ length: 1000, width: 500 })],
+      parts: [part({ length: 400, width: 300, canRotate: false })],
+    })
+    expect(solution.layouts[0].offcuts).toEqual([
+      { x: 400, y: 0, w: 600, h: 500 },
+      { x: 0, y: 300, w: 400, h: 200 },
+    ])
+    expect(solution.stats).toMatchObject({ cuts: 2, cutLength: 900 })
+  })
+
+  it('consolidates the leftover at least as well as a layout worked out by hand', () => {
+    const strips: Job = {
+      kerf: 1.6,
+      stock: [sheet({ id: 'full', length: 2440, width: 1220 }), sheet({ id: 'spare', length: 700, width: 1220 })],
+      parts: [
+        part({ id: 'a', length: 30, width: 1605, qty: 2 }),
+        part({ id: 'b', length: 110, width: 1219, qty: 2 }),
+        part({ id: 'c', length: 110, width: 384, qty: 2 }),
+        part({ id: 'd', length: 200, width: 590, qty: 1 }),
+      ],
+    }
+    // By hand: both 1219 strips as columns at one end, everything else in a 200 deep row.
+    const byHand = (2440 - 2 * (110 + strips.kerf)) * (1220 - 200 - strips.kerf)
+
+    const [best] = optimise(strips)
+    expect(best.stats).toMatchObject({ sheets: 1, unplaced: 0 })
+    const [largest] = best.layouts[0].offcuts
+    expect(largest.w * largest.h).toBeGreaterThanOrEqual(byHand)
+  })
+
+  it('gives the same solutions every time for the same job', () => {
+    expect(optimise(cabinet)).toEqual(optimise(cabinet))
+  })
+
   it('does not list a sliver as an offcut', () => {
     const sliver = MIN_OFFCUT_SIDE - 1
     const [solution] = optimise({

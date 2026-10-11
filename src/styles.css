@@ -94,7 +94,15 @@ td {
 }
 
 td:first-child {
-  width: 40%;
+  width: 32%;
+}
+
+input[type='number'] {
+  appearance: textfield;
+}
+
+input[type='number']::-webkit-inner-spin-button {
+  appearance: none;
 }
 
 input:not([type='checkbox']) {
@@ -293,6 +301,29 @@ text {
 
 .offcut-label {
   fill: var(--muted);
+}
+
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  border: 1px solid #1f1d1a;
+  print-color-adjust: exact;
+}
+
+.size {
+  color: var(--muted);
 }
 
 .offcuts {
