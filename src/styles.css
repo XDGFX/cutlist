@@ -155,12 +155,40 @@ h3 {
 
 .masthead .tools button {
   display: inline-flex;
+  padding: 0.15em 0.2em;
+  color: var(--ink);
+}
+
+/* At the size of the title, so the switch reads as one. */
+.masthead .tools .icon {
+  font-size: 2rem;
+}
+
+/* Taller than a capital, so it hangs a dot below the baseline either side. */
+[data-icon='blade'] {
+  vertical-align: -0.18em;
+}
+
+.work-tools {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1.5em;
+}
+
+.work-switch {
+  display: inline-flex;
   align-items: center;
   gap: 0.5em;
   padding: 0.15em 0.4em;
+  color: var(--ink);
+  font: inherit;
 }
 
-.masthead .tools button[aria-pressed='true'] {
+.work-switch:hover {
+  background: var(--offcut);
+}
+
+.work-switch[aria-pressed='true'] {
   background: var(--ink);
   color: var(--bg);
 }
@@ -1157,15 +1185,6 @@ text {
 
   .masthead {
     margin-bottom: 0;
-  }
-
-  /* The title keeps the middle of a narrow masthead, so its buttons go down to their icons. */
-  .masthead .tools {
-    gap: 0.5em;
-  }
-
-  .masthead .tools .wide {
-    display: none;
   }
 
   .colophon {

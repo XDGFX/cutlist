@@ -1,6 +1,7 @@
 /**
  * Pictures on the dot grid of the heading font, so an icon reads as one more of its letters.
- * To add one, draw it here as seven rows of equal width, a `#` to each dot.
+ * To add one, draw it here as seven rows of equal width, a `#` to each dot; a picture that needs
+ * more rows hangs below the baseline.
  */
 const ICONS = {
   bin: ['...#...', '#######', '.#...#.', '.#.#.#.', '.#.#.#.', '.#...#.', '..###..'],
@@ -8,9 +9,11 @@ const ICONS = {
   heart: ['.##.##.', '#######', '#######', '#######', '.#####.', '..###..', '...#...'],
   plus: ['.....', '..#..', '..#..', '#####', '..#..', '..#..', '.....'],
   minus: ['.....', '.....', '.....', '#####', '.....', '.....', '.....'],
-  sun: ['...#...', '.#...#.', '..###..', '#.###.#', '..###..', '.#...#.', '...#...'],
-  moon: ['..###..', '.###...', '###....', '###....', '###....', '.###...', '..###..'],
-  saw: ['..........', '......####', '...####..#', '#######..#', '##########', '#.#.#.####', '..........'],
+  /** A wall switch, up for the light and down for the dark. */
+  'switch-up': ['#######', '#..#..#', '#..#..#', '#.###.#', '#.###.#', '#.....#', '#######'],
+  'switch-down': ['#######', '#.....#', '#.###.#', '#.###.#', '#..#..#', '#..#..#', '#######'],
+  /** Two dots taller than a capital, as a round blade needs the room for its teeth to show. */
+  blade: ['.....#...', '...####..', '.######..', '###...##.', '.##.#.##.', '.##...###', '..######.', '..####...', '...#.....'],
   code: ['...#.#...', '..#...#..', '.#.....#.', '#.......#', '.#.....#.', '..#...#..', '...#.#...'],
 } satisfies Record<string, string[]>
 

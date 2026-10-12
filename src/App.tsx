@@ -392,6 +392,16 @@ export function App() {
         r.id === s.activeRun ? { ...r, done: r.done?.filter((k) => !k.startsWith(`${chosen}/`)) } : r,
       ),
     }))
+  const workSwitch = (
+    <button
+      className="work-switch"
+      aria-pressed={working}
+      title={working ? 'Leave work mode' : 'Work mode: just the drawings, to mark parts off as they are cut'}
+      onClick={() => setWorking(!working)}
+    >
+      <Icon name="blade" /> Work
+    </button>
+  )
   const placed = solution?.layouts.reduce((n, l) => n + l.placements.length, 0) ?? 0
   const cut = solution?.layouts.reduce((n, l, i) => n + l.placements.filter((_, j) => done.has(doneKey(i, j))).length, 0) ?? 0
 
@@ -426,23 +436,13 @@ export function App() {
         <Title />
         <span className="tools">
           <Pointer axis="y" />
-          {solution && (
-            <button
-              aria-pressed={working}
-              aria-label="Work mode"
-              title={working ? 'Leave work mode' : 'Work mode: just the drawings, to mark parts off as they are cut'}
-              onClick={() => setWorking(!working)}
-            >
-              <Icon name="saw" /> <span className="wide">Work</span>
-            </button>
-          )}
           <button
             className="theme"
             aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             onClick={switchTheme}
           >
-            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+            <Icon name={theme === 'dark' ? 'switch-down' : 'switch-up'} />
           </button>
         </span>
       </header>
@@ -770,8 +770,9 @@ export function App() {
                 <span>
                   {cut} of {placed} parts cut
                 </span>
-                <span>
+                <span className="work-tools">
                   {cut > 0 && <button onClick={clearDone}>Clear marks</button>}
+                  {workSwitch}
                 </span>
               </div>
             ) : (
@@ -807,7 +808,10 @@ export function App() {
                 )}
               </div>
               <span>{figures(solution)}</span>
-              <span>{moves(solution)}</span>
+              <span className="work-tools">
+                {moves(solution)}
+                {workSwitch}
+              </span>
             </div>
             )}
 
