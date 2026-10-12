@@ -4,10 +4,62 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>CUTLIST</title>
+    <title>Cutlist – free cut list optimiser for plywood and sheet goods</title>
+    <meta
+      name="description"
+      content="Free cut list optimiser (optimizer) for plywood, MDF and other sheet goods. Guillotine cuts only, with the cutting order and fence distance for every cut. No account; runs in your browser."
+    />
+    <link rel="canonical" href="https://xdgfx.github.io/cutlist/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Cutlist" />
+    <meta property="og:title" content="Cutlist – free cut list optimiser for plywood and sheet goods" />
+    <meta
+      property="og:description"
+      content="Guillotine cuts only, with the cutting order and fence distance for every cut. No account; runs in your browser."
+    />
+    <meta property="og:url" content="https://xdgfx.github.io/cutlist/" />
+    <meta property="og:image" content="https://xdgfx.github.io/cutlist/og.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta
+      property="og:image:alt"
+      content="A stock sheet seen from above, cut into eight parts with one offcut left over."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- What a crawler or a browser without JavaScript reads. The app replaces it on mount. -->
+      <div class="app">
+        <header class="bar masthead">
+          <span></span>
+          <h1>Cutlist</h1>
+          <span></span>
+        </header>
+        <main class="about">
+          <p>
+            Cutlist is a free cut list optimiser (optimizer) for plywood, MDF and other sheet goods. Enter your stock
+            sheets, your parts and the kerf of your blade in millimetres, and it lays the parts out with guillotine cuts
+            only: straight cuts from one edge to the other, the kind a table saw or a track saw makes.
+          </p>
+          <ul>
+            <li>
+              A cutting order for every sheet, with the fence distance for each rip and crosscut, arranged to keep fence
+              moves few.
+            </li>
+            <li>Several candidate layouts for each job, with the waste and the offcuts worth keeping.</li>
+            <li>Grain kept along the sheet for any part that must not rotate.</li>
+            <li>A work mode for the workshop: tap each part as you cut it.</li>
+            <li>
+              No account, no adverts and no limits. Everything runs in your browser, jobs are saved on your device, and
+              a link can carry a whole job.
+            </li>
+            <li>Open source under AGPL-3.0, at <a href="https://github.com/XDGFX/cutlist">github.com/XDGFX/cutlist</a>.</li>
+          </ul>
+          <noscript><p>Working out a layout needs JavaScript, which is switched off in this browser.</p></noscript>
+        </main>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
