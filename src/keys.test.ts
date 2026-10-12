@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asksToCalculate, enterTo, neighbour, stepTo, type Press } from './keys'
+import { arrowTo, asksToCalculate, enterTo, neighbour, stepTo, type Press } from './keys'
 
 const press = (over: Partial<Press>): Press => ({
   key: 'Enter',
@@ -70,6 +70,44 @@ describe('stepTo', () => {
 
   it('leaves other keys', () => {
     expect(stepTo('ArrowLeft', 1, 3)).toBeNull()
+  })
+})
+
+describe('arrowTo', () => {
+  const size = { rows: 3, cols: 3 }
+  const arrow = (key: string, over: Partial<Press> = {}) => press({ key, ...over })
+
+  it('moves up and down a row whether or not the field is selected', () => {
+    for (const selected of [true, false]) {
+      expect(arrowTo(arrow('ArrowDown'), { row: 1, col: 2 }, size, selected)).toEqual({ row: 2, col: 2 })
+      expect(arrowTo(arrow('ArrowUp'), { row: 1, col: 2 }, size, selected)).toEqual({ row: 0, col: 2 })
+    }
+  })
+
+  it('moves left and right along a row from a selected field', () => {
+    expect(arrowTo(arrow('ArrowRight'), { row: 1, col: 1 }, size, true)).toEqual({ row: 1, col: 2 })
+    expect(arrowTo(arrow('ArrowLeft'), { row: 1, col: 1 }, size, true)).toEqual({ row: 1, col: 0 })
+  })
+
+  it('leaves left and right to the caret in a field being edited', () => {
+    expect(arrowTo(arrow('ArrowRight'), { row: 1, col: 1 }, size, false)).toBeNull()
+    expect(arrowTo(arrow('ArrowLeft'), { row: 1, col: 1 }, size, false)).toBeNull()
+  })
+
+  it('stays put at the edges of the table', () => {
+    expect(arrowTo(arrow('ArrowUp'), { row: 0, col: 1 }, size, false)).toEqual({ row: 0, col: 1 })
+    expect(arrowTo(arrow('ArrowDown'), { row: 2, col: 1 }, size, false)).toEqual({ row: 2, col: 1 })
+    expect(arrowTo(arrow('ArrowLeft'), { row: 1, col: 0 }, size, true)).toEqual({ row: 1, col: 0 })
+    expect(arrowTo(arrow('ArrowRight'), { row: 1, col: 2 }, size, true)).toEqual({ row: 1, col: 2 })
+  })
+
+  it('leaves an arrow held with another key', () => {
+    for (const held of ['ctrlKey', 'metaKey', 'altKey', 'shiftKey', 'isComposing'] as const)
+      expect(arrowTo(arrow('ArrowDown', { [held]: true }), { row: 1, col: 1 }, size, true)).toBeNull()
+  })
+
+  it('leaves other keys', () => {
+    expect(arrowTo(arrow('Home'), { row: 1, col: 1 }, size, true)).toBeNull()
   })
 })
 

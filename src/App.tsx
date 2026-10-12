@@ -24,7 +24,7 @@ import {
 } from './optimiser'
 import { flourishPage } from './flourish'
 import { Icon } from './Icon'
-import { asksToCalculate, enterTo, neighbour, stepTo } from './keys'
+import { arrowTo, asksToCalculate, enterTo, neighbour, stepTo } from './keys'
 import type { SearchRequest, Update } from './search.worker'
 import {
   FILLS,
@@ -272,19 +272,45 @@ export function App() {
         : { parts: job.parts.filter((p) => p.id !== id) },
     )
   }
-  /** Enter in a table's field moves down its column, and adds a row from the last one. */
-  const onEnter = (list: 'stock' | 'parts') => (e: ReactKeyboardEvent) => {
-    const field = e.target as HTMLElement
-    const col = field.dataset.col
-    const row = field.closest<HTMLElement>('[data-row]')?.dataset.row
-    if (!col || col === 'remove' || !row) return
-    const ids = job[list].map((r) => r.id)
-    const to = enterTo(e.nativeEvent, ids.indexOf(row), ids.length)
-    if (to === null) return
-    e.preventDefault()
-    if (to === 'add') (list === 'stock' ? addStock : addPart)()
-    else focusOn(cell(ids[to], col), true)
-  }
+  // A field reached by key has its whole value selected, until it is clicked or edited.
+  const selected = useRef<EventTarget | null>(null)
+  /**
+   * Moving between a table's fields by key. Enter moves down a column and adds a row from the last
+   * one; the arrows move as in a spreadsheet.
+   */
+  const fields = (list: 'stock' | 'parts') => ({
+    onFocus: (e: { target: EventTarget }) => {
+      selected.current = e.target
+    },
+    onClick: () => {
+      selected.current = null
+    },
+    onInput: () => {
+      selected.current = null
+    },
+    onKeyDown: (e: ReactKeyboardEvent) => {
+      const field = e.target as HTMLElement
+      const col = field.dataset.col
+      const row = field.closest<HTMLElement>('[data-row]')
+      if (!col || col === 'remove' || !row) return
+      const ids = job[list].map((r) => r.id)
+      const at = ids.indexOf(row.dataset.row!)
+      const enter = enterTo(e.nativeEvent, at, ids.length)
+      if (enter !== null) {
+        e.preventDefault()
+        if (enter === 'add') (list === 'stock' ? addStock : addPart)()
+        else focusOn(cell(ids[enter], col), true)
+        return
+      }
+      const cols = [...row.querySelectorAll<HTMLElement>('[data-col]:not([data-col="remove"])')].map((c) => c.dataset.col!)
+      const from = { row: at, col: cols.indexOf(col) }
+      const to = arrowTo(e.nativeEvent, from, { rows: ids.length, cols: cols.length }, selected.current === field)
+      if (!to) return
+      // Taken even at an edge, where the browser would step a number up or down.
+      e.preventDefault()
+      if (to.row !== from.row || to.col !== from.col) focusOn(cell(ids[to.row], cols[to.col]), true)
+    },
+  })
   const clear = (list: 'stock' | 'parts') => {
     setCleared((c) => ({ ...c, [list]: job[list] }))
     setJob({ [list]: [] })
@@ -461,7 +487,7 @@ export function App() {
                 <th />
               </tr>
             </thead>
-            <tbody onKeyDown={onEnter('stock')}>
+            <tbody {...fields('stock')}>
               {job.stock.map((s, i) => {
                 const name = called(s.name, 'Stock sheet', i)
                 return (
@@ -516,7 +542,7 @@ export function App() {
                 <th />
               </tr>
             </thead>
-            <tbody onKeyDown={onEnter('parts')}>
+            <tbody {...fields('parts')}>
               {job.parts.map((p, i) => {
                 const name = called(p.name, 'Part', i)
                 return (
@@ -696,6 +722,10 @@ export function App() {
             <dd>Next row, or a new row from the last</dd>
             <dt>Shift+Enter</dt>
             <dd>Previous row</dd>
+            <dt>↑ ↓</dt>
+            <dd>Row above or below, in a table</dd>
+            <dt>← →</dt>
+            <dd>Field to the left or right, until you type in it</dd>
             <dt><CalculateKeys /></dt>
             <dd>Calculate</dd>
             <dt>← →</dt>
