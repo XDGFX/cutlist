@@ -95,7 +95,7 @@ body {
   column-gap: 3rem;
   align-items: start;
   min-height: 100vh;
-  padding: 0 0.75rem 3rem;
+  padding: 0 0.75rem 0.5rem;
 }
 
 /* A line of capitals with a figure pinned to each edge. */
@@ -264,7 +264,7 @@ h3 {
 }
 
 .inputs h2,
-.sheet figcaption,
+.sheet figcaption h3,
 .fold summary,
 .sequence summary {
   font: 900 var(--heading-size) / 1.2 var(--heading);
@@ -1176,7 +1176,7 @@ text {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto 1fr auto;
     row-gap: 3rem;
-    padding: 0 0.5rem 3rem;
+    padding: 0 0.5rem 0.5rem;
   }
 
   .masthead {
