@@ -13,6 +13,8 @@ const ICONS = {
   moon: ['..###..', '.###...', '###....', '###....', '###....', '.###...', '..###..'],
   /** Two dots taller than a capital, as a round blade needs the room for its teeth to show. */
   blade: ['.....#...', '...####..', '.######..', '###...##.', '.##.#.##.', '.##...###', '..######.', '..####...', '...#.....'],
+  /** Four rows, so that it sits close under what it points at. */
+  pointer: ['...#...', '..###..', '.#####.', '#######'],
   code: ['...#.#...', '..#...#..', '.#.....#.', '#.......#', '.#.....#.', '..#...#..', '...#.#...'],
 } satisfies Record<string, string[]>
 

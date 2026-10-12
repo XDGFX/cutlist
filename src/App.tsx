@@ -120,9 +120,11 @@ const MOTIFS: [number, (t: number) => ReactNode][] = [
 /** How long the inputs must rest before the URL is rewritten, in milliseconds. */
 const URL_DELAY = 300
 
+/** How long the Calculate button says what the search took, in milliseconds. */
+const TOOK_SHOWN = 2500
+
 interface Searching {
   stats: SearchStats
-  best: Solution | null
   ms: number
 }
 const time = (at: number) =>
@@ -130,9 +132,16 @@ const time = (at: number) =>
 
 const sameJob = (a: Job, b: Job) => JSON.stringify(a) === JSON.stringify(b)
 
-function largestOffcut(s: Solution): string {
-  const [largest] = s.layouts.flatMap((l) => l.offcuts).sort((a, b) => b.w * b.h - a.w * a.h)
-  return largest ? `${largest.w.toFixed(0)} × ${largest.h.toFixed(0)} offcut` : 'no offcut'
+/** A pointer under the progress bar at the layout the best solution so far came from, with its number. */
+function Best({ at, of }: { at: number; of: number }) {
+  const along = at / (of || 1)
+  // The number hangs towards the middle of the bar, so that it stays on it at either end.
+  return (
+    <span className={along > 0.5 ? 'best late' : 'best'} style={{ left: `${along * 100}%` }}>
+      <Icon name="pointer" />
+      Best at {count(at)}
+    </span>
+  )
 }
 
 /** The figures a candidate is chosen on, as one line. */
@@ -196,6 +205,9 @@ function initial(): Saved {
 export function App() {
   const [state, setState] = useState(initial)
   const [copied, setCopied] = useState(false)
+  // How long the search that has just ended took, which the Calculate button shows for a moment.
+  const [took, setTook] = useState<string | null>(null)
+  const tookTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [searching, setSearching] = useState<Searching | null>(null)
   const [cleared, setCleared] = useState<{ stock?: StockSheet[]; parts?: Part[] }>({})
   const worker = useRef<Worker | null>(null)
@@ -339,18 +351,22 @@ export function App() {
     const started = performance.now()
     const w = new Worker(new URL('./search.worker.ts', import.meta.url), { type: 'module' })
     worker.current = w
-    setSearching({ stats: { tried: 0, total: 0, improvements: 0, lastImprovedAt: 0 }, best: null, ms: 0 })
+    clearTimeout(tookTimer.current)
+    setTook(null)
+    setSearching({ stats: { tried: 0, total: 0, improvements: 0, lastImprovedAt: 0 }, ms: 0 })
     setStatus('Searching')
 
     w.onmessage = ({ data }: MessageEvent<Update>) => {
       const ms = performance.now() - started
       if (data.type === 'progress') {
-        setSearching({ stats: data.stats, best: data.solutions[0] ?? null, ms })
+        setSearching({ stats: data.stats, ms })
         return
       }
       w.terminate()
       worker.current = null
       setSearching(null)
+      setTook(`${data.stats.tried < data.stats.total ? 'Stopped after' : 'Done in'} ${duration(ms)}`)
+      tookTimer.current = setTimeout(() => setTook(null), TOOK_SHOWN)
       setStatus(announce(data.solutions, data.stats))
       // The buttons that stop or repeat a search can go when it ends, and focus must not go with them.
       if (document.activeElement?.matches('[data-search]')) wanted.current = { selector: '#calculate', lost: true }
@@ -639,8 +655,8 @@ export function App() {
               aria-disabled={searching !== null}
               aria-keyshortcuts="Control+Enter Meta+Enter"
             >
-              {searching ? 'Searching…' : 'Calculate'}
-              {!searching && <span className="hint"><CalculateKeys /></span>}
+              {searching ? 'Searching…' : (took ?? 'Calculate')}
+              {!searching && took === null && <span className="hint"><CalculateKeys /></span>}
             </button>
             {searching && (
               <button data-search onClick={stop}>
@@ -762,31 +778,22 @@ export function App() {
         </p>
         {searching && (
           <section className="progress">
-            <div className="bar">
-              <span>{count(searching.stats.tried)}</span>
-              <span>
-                <span className="dot">●</span> Searching
-              </span>
-              <span>{count(searching.stats.total)}</span>
+            <div className="status">
+              <div className="bar">
+                <span>{count(searching.stats.tried)}</span>
+                <span>
+                  <span className="dot">●</span> Searching
+                </span>
+                <span>{duration(searching.ms)}</span>
+              </div>
+              <div className="track">
+                <progress aria-label="Layouts tried" value={searching.stats.tried} max={searching.stats.total || 1} />
+                {searching.stats.improvements > 0 && <Best at={searching.stats.lastImprovedAt} of={searching.stats.total} />}
+              </div>
+              <button data-search onClick={stop}>
+                Stop and keep the best so far
+              </button>
             </div>
-            <progress aria-label="Layouts tried" value={searching.stats.tried} max={searching.stats.total || 1} />
-            <p>
-              <strong>
-                {count(searching.stats.tried)} of {count(searching.stats.total)}
-              </strong>{' '}
-              layouts tried in {duration(searching.ms)} ·{' '}
-              {count(Math.round(searching.stats.tried / (searching.ms / 1000 || 1)))} per second ·{' '}
-              {searching.stats.improvements} improvements, the last at layout {count(searching.stats.lastImprovedAt)}
-            </p>
-            {searching.best && (
-              <p>
-                Best so far: {searching.best.stats.sheets} {searching.best.stats.sheets === 1 ? 'sheet' : 'sheets'} ·{' '}
-                {largestOffcut(searching.best)} · {searching.best.stats.cuts} cuts
-              </p>
-            )}
-            <button data-search onClick={stop}>
-              Stop and keep the best so far
-            </button>
           </section>
         )}
 

@@ -824,10 +824,63 @@ input[type='range']::-moz-range-thumb {
   font: inherit;
 }
 
-.progress,
 .chosen,
 .notice {
   margin-bottom: 1.5rem;
+}
+
+/* While a search runs the results fade back and its progress sits over them. */
+main:has(.progress) {
+  position: relative;
+  min-height: 14rem;
+  isolation: isolate;
+}
+
+.progress {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  /* A search that ends within this never shows, so a quick one does not flash. */
+  animation: held-back 400ms steps(1) backwards;
+}
+
+@keyframes held-back {
+  from {
+    visibility: hidden;
+  }
+}
+
+.status {
+  position: sticky;
+  top: 30vh;
+  width: min(100%, 34rem);
+  margin: 3rem auto 0;
+  text-align: center;
+}
+
+.track {
+  position: relative;
+  margin-bottom: 2.2rem;
+}
+
+.best {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+  /* Half the pointer's width, to put its tip on the layout. */
+  transform: translateX(calc(var(--heading-size) * -0.35));
+}
+
+.best.late {
+  align-items: flex-end;
+  transform: translateX(calc(-100% + var(--heading-size) * 0.35));
 }
 
 .progress,
@@ -859,15 +912,6 @@ input[type='range']::-moz-range-thumb {
 
 .progress progress::-moz-progress-bar {
   background: var(--ink);
-}
-
-.progress p {
-  color: var(--muted);
-}
-
-.progress strong {
-  color: var(--ink);
-  font-weight: 400;
 }
 
 .progress button {
