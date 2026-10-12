@@ -11,8 +11,23 @@
   color-scheme: light dark;
 }
 
+/* The page follows the system unless the switch in the masthead sets it the other way. Zeroed
+   with :where so that print, later, still wins. */
+:root:where([data-theme='light']) {
+  color-scheme: light;
+}
+
+:root:where([data-theme='dark']) {
+  --bg: #000;
+  --ink: #fff;
+  --muted: #949494;
+  --faint: #555;
+  --offcut: #1c1c1c;
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:where(:not([data-theme='light'])) {
     --bg: #000;
     --ink: #fff;
     --muted: #949494;
@@ -132,6 +147,82 @@ h3 {
   color: var(--bg);
 }
 
+.masthead .tools {
+  display: flex;
+  align-items: baseline;
+  gap: 1em;
+}
+
+.masthead .tools button {
+  display: inline-flex;
+  padding: 0.15em 0.4em;
+}
+
+/* Taller than a capital, so it hangs a dot below the baseline either side. */
+[data-icon='blade'] {
+  vertical-align: -0.18em;
+}
+
+.work-tools {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1.5em;
+}
+
+.work-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.15em 0.4em;
+  color: var(--ink);
+  font: inherit;
+}
+
+.work-switch:hover {
+  background: var(--offcut);
+}
+
+.work-switch[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+/* Work mode: the drawings alone, across the page. */
+.working {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.working .inputs {
+  display: none;
+}
+
+.work .part {
+  cursor: pointer;
+}
+
+.work g[role='checkbox'] {
+  outline: 0;
+}
+
+.work g[role='checkbox']:focus-visible > .part {
+  stroke-width: 3;
+}
+
+/* A cut part fades back behind its tick, so what is left to cut stands out. */
+.done > :not(.tick, title) {
+  opacity: 0.25;
+}
+
+.tick rect {
+  fill: var(--ink);
+}
+
+.tick polyline {
+  fill: none;
+  stroke: var(--bg);
+  stroke-linecap: square;
+}
+
 /* A lit field is inverted whole, over the page colour where it has no fill of its own. */
 [data-lit] {
   filter: invert(1);
@@ -147,8 +238,13 @@ h3 {
   color: #fff;
 }
 
+[data-theme='dark'] ::highlight(flourish) {
+  background-color: #fff;
+  color: #000;
+}
+
 @media (prefers-color-scheme: dark) {
-  ::highlight(flourish) {
+  :root:not([data-theme='light']) ::highlight(flourish) {
     background-color: #fff;
     color: #000;
   }

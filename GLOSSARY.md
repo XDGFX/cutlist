@@ -35,3 +35,5 @@
 - **Effort**: how many layouts a calculation tries before it settles on its candidates.
 - **Run**: one calculation of a job at one effort, kept in history with its candidates and the one
   that was chosen.
+- **Work mode**: the page while cutting: only the chosen candidate's layouts, with no inputs, and
+  each part can be tapped to mark it cut.

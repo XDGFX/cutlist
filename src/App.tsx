@@ -38,6 +38,7 @@ import {
   type PartFill,
   type Run,
   type Saved,
+  type Theme,
 } from './storage'
 
 const count = (n: number) => n.toLocaleString('en-GB')
@@ -55,6 +56,14 @@ const watch = (notify: () => void) => {
   watching.add(notify)
   return () => void watching.delete(notify)
 }
+
+const DARK = matchMedia('(prefers-color-scheme: dark)')
+const watchSystem = (notify: () => void) => {
+  DARK.addEventListener('change', notify)
+  return () => DARK.removeEventListener('change', notify)
+}
+/** The theme the system asks for, which the page follows unless the masthead's switch overrides it. */
+const useSystemTheme = (): Theme => useSyncExternalStore(watchSystem, () => (DARK.matches ? 'dark' : 'light'))
 
 /** Line colours for parts, chosen to stay distinct from one another, including for colour-blind readers. */
 const INKS = ['#0072b2', '#d55e00', '#009e73', '#cc79a7', 'var(--ink)', '#56b4e9', '#e69f00', '#777']
@@ -185,6 +194,18 @@ export function App() {
   const showCuts = state.showCuts ?? false
   const partFill = state.partFill ?? 'mono'
   const showNames = state.showNames ?? false
+  const system = useSystemTheme()
+  const theme = state.theme ?? system
+  useLayoutEffect(() => {
+    if (state.theme) document.documentElement.dataset.theme = state.theme
+    else delete document.documentElement.dataset.theme
+  }, [state.theme])
+  // An override that comes round to the system's choice is dropped, so the page follows it again.
+  const switchTheme = () =>
+    setState((s) => {
+      const next = (s.theme ?? system) === 'dark' ? 'light' : 'dark'
+      return { ...s, theme: next === system ? undefined : next }
+    })
   /** The field a new row is entered from. */
   const firstCol = showNames ? 'name' : 'length'
   const [status, setStatus] = useState('')
@@ -216,6 +237,9 @@ export function App() {
   const solutions = useMemo(() => (run ? solve(run) : []), [run?.id, run?.solutions])
   const solution = solutions[Math.min(run?.pick ?? 0, solutions.length - 1)] as Solution | undefined
   const stale = run !== null && !sameJob(run.job, job)
+  /** Work mode needs a candidate to work from, and holds to it until it is left. */
+  const working = (state.working ?? false) && solution !== undefined
+  const setWorking = (on: boolean) => setState((s) => ({ ...s, working: on }))
 
   const setJob = (patch: Partial<Job>) => setState((s) => ({ ...s, job: { ...s.job, ...patch } }))
 
@@ -312,7 +336,7 @@ export function App() {
   // Ctrl or Cmd with Enter calculates from anywhere, fields included.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!asksToCalculate(e)) return
+      if (!asksToCalculate(e) || working) return
       e.preventDefault()
       calculate()
     }
@@ -336,7 +360,7 @@ export function App() {
   // The arrow keys step through the candidates from anywhere, unless a field is using them. Inside
   // the radio group they are the group's own.
   useEffect(() => {
-    if (solutions.length < 2) return
+    if (solutions.length < 2 || working) return
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
       if (document.querySelector('dialog[open]')) return
@@ -346,7 +370,40 @@ export function App() {
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
-  }, [chosen, solutions.length])
+  }, [chosen, solutions.length, working])
+
+  const doneKey = (sheet: number, part: number) => `${chosen}/${sheet}/${part}`
+  const done = new Set(run?.done)
+  const markDone = (sheet: number, part: number) => {
+    const key = doneKey(sheet, part)
+    setState((s) => ({
+      ...s,
+      runs: s.runs.map((r) =>
+        r.id === s.activeRun
+          ? { ...r, done: r.done?.includes(key) ? r.done.filter((k) => k !== key) : [...(r.done ?? []), key] }
+          : r,
+      ),
+    }))
+  }
+  const clearDone = () =>
+    setState((s) => ({
+      ...s,
+      runs: s.runs.map((r) =>
+        r.id === s.activeRun ? { ...r, done: r.done?.filter((k) => !k.startsWith(`${chosen}/`)) } : r,
+      ),
+    }))
+  const workSwitch = (
+    <button
+      className="work-switch"
+      aria-pressed={working}
+      title={working ? 'Leave work mode' : 'Work mode: just the drawings, to mark parts off as they are cut'}
+      onClick={() => setWorking(!working)}
+    >
+      <Icon name="blade" /> Work
+    </button>
+  )
+  const placed = solution?.layouts.reduce((n, l) => n + l.placements.length, 0) ?? 0
+  const cut = solution?.layouts.reduce((n, l, i) => n + l.placements.filter((_, j) => done.has(doneKey(i, j))).length, 0) ?? 0
 
   const removeRun = (id: string) => {
     const next = neighbour(
@@ -369,7 +426,7 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className={working ? 'app working' : 'app'}>
       {/* Not a link to #results, because the address's fragment holds the job. */}
       <button className="skip" onClick={() => focusOn('#results')}>
         Skip to results
@@ -377,10 +434,20 @@ export function App() {
       <header className="bar masthead">
         <Pointer axis="x" />
         <Title />
-        <Pointer axis="y" />
+        <span className="tools">
+          <Pointer axis="y" />
+          <button
+            className="theme"
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={switchTheme}
+          >
+            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+          </button>
+        </span>
       </header>
 
-      <aside className="inputs" aria-label="Job">
+      <aside className="inputs" aria-label="Job" hidden={working}>
         <section>
           <h2 id="stock">Stock sheets</h2>
           <table className={showNames ? undefined : 'unnamed'} aria-labelledby="stock">
@@ -685,7 +752,7 @@ export function App() {
 
         {!run && !searching && <p className="empty">Enter stock sheets and parts, then press Calculate.</p>}
 
-        {run && stale && (
+        {run && stale && !working && (
           <p className="notice">
             The inputs have changed since this run.{' '}
             <button data-search onClick={calculate}>
@@ -697,6 +764,18 @@ export function App() {
 
         {run && solution && (
           <>
+            {working ? (
+              <div className="bar chosen">
+                <span>Candidate {String.fromCharCode(65 + chosen)}</span>
+                <span>
+                  {cut} of {placed} parts cut
+                </span>
+                <span className="work-tools">
+                  {cut > 0 && <button onClick={clearDone}>Clear marks</button>}
+                  {workSwitch}
+                </span>
+              </div>
+            ) : (
             <div className="bar chosen">
               <div className="candidates">
                 {solutions.length > 1 && (
@@ -729,8 +808,12 @@ export function App() {
                 )}
               </div>
               <span>{figures(solution)}</span>
-              <span>{moves(solution)}</span>
+              <span className="work-tools">
+                {moves(solution)}
+                {workSwitch}
+              </span>
             </div>
+            )}
 
             {solution.stats.stacked > 0 && (
               <p className="notice warn">
@@ -755,9 +838,11 @@ export function App() {
                 fill={partFill}
                 kerf={run.job.kerf}
                 named={showNames}
+                done={working ? new Set(layout.placements.map((_, j) => j).filter((j) => done.has(doneKey(i, j)))) : undefined}
+                onDone={(j) => markDone(i, j)}
               />
             ))}
-            {run.search && (
+            {run.search && !working && (
               <p className="summary">
                 Tried {count(run.search.tried)} layouts in {duration(run.search.ms)} at {EFFORTS[run.effort ?? 0].name}{' '}
                 effort · {run.search.improvements} improvements, the last at layout {count(run.search.lastImprovedAt)}
@@ -1047,6 +1132,8 @@ function Sheet({
   fill,
   kerf,
   named,
+  done,
+  onDone,
 }: {
   layout: Layout
   index: number
@@ -1055,6 +1142,9 @@ function Sheet({
   fill: PartFill
   kerf: number
   named: boolean
+  /** In work mode, the placements marked done; tapping a part marks or unmarks it. */
+  done?: Set<number>
+  onDone: (placement: number) => void
 }) {
   const svg = useRef<SVGSVGElement>(null)
   // Sheet millimetres per screen pixel, so that text on a sheet is sized in pixels however large
@@ -1225,8 +1315,25 @@ function Sheet({
         {layout.placements.map((p, i) => {
           // A part too small for its label is too small for a motif to tell it apart.
           const bare = !detail && plan.small.has(i)
+          const marked = done?.has(i) ?? false
           return (
-            <g key={`p${i}`}>
+            <g
+              key={`p${i}`}
+              className={marked ? 'done' : undefined}
+              {...(done && {
+                role: 'checkbox',
+                'aria-checked': marked,
+                'aria-label': partLabel(p, named).join(': '),
+                // A part drawn again in a detail is the same part, so the keyboard meets it once.
+                tabIndex: detail ? -1 : 0,
+                onClick: () => onDone(i),
+                onKeyDown: (e: ReactKeyboardEvent) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return
+                  e.preventDefault()
+                  onDone(i)
+                },
+              })}
+            >
               <title>{partLabel(p, named).join(': ')}</title>
               <rect
                 className="part"
@@ -1240,6 +1347,7 @@ function Sheet({
                 <Band x={p.x} y={p.y} w={p.w} h={p.h} unit={unit} stroke={pattern(id, p.partId)} bare={bare} />
               )}
               {!bare && (!grouped.has(i) || apart.has(i)) && label(partLabel(p, named), p, 'part-label')}
+              {marked && <Tick part={p} font={font} />}
             </g>
           )
         })}
@@ -1299,16 +1407,21 @@ function Sheet({
         <span>
           {named && layout.stockName} {mm(layout.length)} × {mm(layout.width)}
         </span>
-        <span>{((used / (layout.length * layout.width)) * 100).toFixed(0)}% used</span>
+        <span>
+          {done
+            ? `${done.size} of ${layout.placements.length} cut`
+            : `${((used / (layout.length * layout.width)) * 100).toFixed(0)}% used`}
+        </span>
       </figcaption>
       <svg
         ref={svg}
         viewBox={`0 ${-plan.gutter.top} ${layout.length} ${layout.width + gutter}`}
         // The margin is extra to the height a sheet may take, so that labels there do not shrink it.
         style={{ maxHeight: `calc(75vh + ${gutter / px}px)` }}
-        role="img"
+        // In work mode its parts are controls, which an image would hide.
+        role={done ? 'group' : 'img'}
         aria-label={`Layout of sheet ${index + 1}`}
-        className={fill}
+        className={done ? `${fill} work` : fill}
         onPointerMove={(e) => {
           const toSheet = e.currentTarget.getScreenCTM()?.inverse()
           if (!toSheet) return
@@ -1414,6 +1527,20 @@ function Sheet({
         </details>
       )}
     </figure>
+  )
+}
+
+/** The mark on a part cut in work mode: a tick on a solid tab in its corner, at the size of a label. */
+function Tick({ part, font }: { part: Rect; font: number }) {
+  const side = Math.min(font * 1.6, part.w * 0.6, part.h * 0.6)
+  const inset = Math.min(font * 0.4, (Math.min(part.w, part.h) - side) / 2)
+  const [x, y] = [part.x + inset, part.y + inset]
+  const at = (u: number, v: number) => `${x + side * u},${y + side * v}`
+  return (
+    <g className="tick">
+      <rect x={x} y={y} width={side} height={side} />
+      <polyline points={`${at(0.22, 0.52)} ${at(0.42, 0.72)} ${at(0.78, 0.3)}`} strokeWidth={side * 0.14} />
+    </g>
   )
 }
 

@@ -14,6 +14,8 @@ export interface Run {
   /** Missing on runs saved before solutions were stored, and on old runs shed to fit storage. */
   solutions?: Solution[]
   search?: SearchSummary
+  /** Parts marked done in work mode, each as `candidate/sheet/placement`. */
+  done?: string[]
 }
 
 /** How the drawing tells parts apart: not at all, by a black pattern, or by a coloured border. */
@@ -29,7 +31,13 @@ export interface Saved {
   partFill?: PartFill
   /** Whether the stock and parts tables offer a name to fill in. */
   showNames?: boolean
+  /** Set only where it overrides the system's choice. */
+  theme?: Theme
+  /** Whether the page is in work mode, showing only the chosen candidate to mark parts off as they are cut. */
+  working?: boolean
 }
+
+export type Theme = 'light' | 'dark'
 
 export const MAX_RUNS = 30
 
