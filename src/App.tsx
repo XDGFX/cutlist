@@ -442,7 +442,7 @@ export function App() {
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             onClick={switchTheme}
           >
-            <Icon name={theme === 'dark' ? 'switch-down' : 'switch-up'} />
+            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
           </button>
         </span>
       </header>

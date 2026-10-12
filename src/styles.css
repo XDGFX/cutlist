@@ -155,13 +155,7 @@ h3 {
 
 .masthead .tools button {
   display: inline-flex;
-  padding: 0.15em 0.2em;
-  color: var(--ink);
-}
-
-/* At the size of the title, so the switch reads as one. */
-.masthead .tools .icon {
-  font-size: 2rem;
+  padding: 0.15em 0.4em;
 }
 
 /* Taller than a capital, so it hangs a dot below the baseline either side. */
