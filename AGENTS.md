@@ -14,3 +14,9 @@ Deployed to GitHub Pages by `.github/workflows/deploy.yml` on every push to `mai
 
 - `npm test`
 - `npm run build`
+
+## Releases
+
+After merging a PR that changes anything a user sees or stores, cut a release from `main` by
+following `RELEASING.md`. Do not ask first. Skip it for docs, tests and refactors; those ride along
+with the next release.
