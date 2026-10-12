@@ -8,6 +8,10 @@ Deployed to GitHub Pages by `.github/workflows/deploy.yml` on every push to `mai
 - The search is seeded and counts tries, never time, so a job and effort always give the same
   solutions. The page runs it in `src/search.worker.ts`; a run stores the solutions it found.
 - Icons are drawn in `src/Icon.tsx`. Add a new one there rather than as an SVG or a text symbol.
+- Each typeface has one job. `--heading` names a section or a thing ("Parts", "Sheet 1"); `--mono`
+  sets everything read as data or operated, figures and buttons included; `--title` is the page's
+  name only. A line that mixes them is a heading word followed by mono figures.
+- The page is inset the same above the title and below the footer.
 - The version in the footer is the latest `v*` tag. To cut a release, follow `RELEASING.md`.
 
 ## Gates
