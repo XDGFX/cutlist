@@ -192,7 +192,7 @@ export function App() {
   const { job, runs } = state
   const effort = Math.min(state.effort ?? 0, EFFORTS.length - 1)
   const showCuts = state.showCuts ?? false
-  const partFill = state.partFill ?? 'mono'
+  const partFill = state.partFill ?? 'colour'
   const showNames = state.showNames ?? false
   const system = useSystemTheme()
   const theme = state.theme ?? system
