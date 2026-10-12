@@ -264,7 +264,7 @@ h3 {
 }
 
 .inputs h2,
-.sheet figcaption,
+.sheet figcaption h3,
 .fold summary,
 .sequence summary {
   font: 900 var(--heading-size) / 1.2 var(--heading);
