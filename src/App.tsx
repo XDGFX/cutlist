@@ -68,12 +68,21 @@ const useSystemTheme = (): Theme => useSyncExternalStore(watchSystem, () => (DAR
 /** Line colours for parts, chosen to stay distinct from one another, including for colour-blind readers. */
 const INKS = ['#0072b2', '#d55e00', '#009e73', '#cc79a7', 'var(--ink)', '#56b4e9', '#e69f00', '#777']
 
+/** Two wings that mirror each other about the dip between them. */
 const bird = (t: number, x: number, y: number) =>
-  `M${t * x},${t * y} q${t * 0.1},${-t * 0.2} ${t * 0.25},${t * 0.02} q${t * 0.12},${-t * 0.22} ${t * 0.27},${-t * 0.04}`
+  `M${t * x},${t * y} q${t * 0.15},${-t * 0.2} ${t * 0.26},${t * 0.03} q${t * 0.11},${-t * 0.23} ${t * 0.26},${-t * 0.03}`
 
 /** Marks that tell parts apart without colour: a tile's side in units of t, then one tile drawn. */
 const MOTIFS: [number, (t: number) => ReactNode][] = [
-  [1, (t) => <path d={`M0,${t} L${t},0`} />],
+  [
+    1,
+    // A stroke through a corner is cut off there, so the two corners beside it draw the rest of it.
+    (t) => (
+      <path
+        d={`M${-t * 0.2},${t * 1.2} L${t * 1.2},${-t * 0.2} M${-t * 0.2},${t * 0.2} L${t * 0.2},${-t * 0.2} M${t * 0.8},${t * 1.2} L${t * 1.2},${t * 0.8}`}
+      />
+    ),
+  ],
   [
     1,
     (t) => (
@@ -83,7 +92,7 @@ const MOTIFS: [number, (t: number) => ReactNode][] = [
       </>
     ),
   ],
-  [1.5, (t) => <path d={bird(t, 0.1, 0.4) + bird(t, 0.85, 1.15)} />],
+  [1.5, (t) => <path d={bird(t, 0.115, 0.42) + bird(t, 0.865, 1.17)} />],
   [1, (t) => <path d={`M0,${t / 2} q${t / 4},${-t * 0.35} ${t / 2},0 t${t / 2},0`} />],
   [1, (t) => <circle cx={t / 2} cy={t / 2} r={t * 0.27} />],
   [
@@ -97,7 +106,8 @@ const MOTIFS: [number, (t: number) => ReactNode][] = [
     ),
   ],
   [1, (t) => <path d={`M${t / 2},0 V${t}`} />],
-  [1, (t) => <path d={`M${t * 0.3},${t * 0.68} L${t * 0.5},${t * 0.32} L${t * 0.7},${t * 0.68} Z`} />],
+  // Equilateral, and raised so that its weight sits in the middle of the tile.
+  [1, (t) => <path d={`M${t * 0.25},${t * 0.68} L${t * 0.5},${t * 0.25} L${t * 0.75},${t * 0.68} Z`} />],
   [
     1,
     (t) => (
