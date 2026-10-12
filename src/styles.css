@@ -610,7 +610,8 @@ button[aria-disabled='true'] {
 
 /* A shortcut is no use where there is no keyboard. */
 @media (hover: none) {
-  .hint {
+  .hint,
+  .fold:has(.keys) {
     display: none;
   }
 }
@@ -795,6 +796,7 @@ input[type='range']::-moz-range-thumb {
   display: block;
   min-width: 1.6em;
   padding: 0.15em 0;
+  text-align: center;
 }
 
 .letters label:hover span {
