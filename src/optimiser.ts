@@ -125,7 +125,7 @@ const LOOKAHEAD = 6
  * Which search this is. Raise it with any change to the solutions a job and effort give, so that a
  * link to a result found by an earlier search does not open on a different candidate.
  */
-export const ENGINE = 1
+export const ENGINE = 2
 
 /** Search effort levels: each tries `scale` times as many layouts as the first. */
 export const EFFORTS = [
