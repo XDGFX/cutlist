@@ -7,6 +7,8 @@ Deployed to GitHub Pages by `.github/workflows/deploy.yml` on every push to `mai
 - `src/optimiser.ts` is pure and has no DOM or storage access. Keep it that way.
 - The search is seeded and counts tries, never time, so a job and effort always give the same
   solutions. The page runs it in `src/search.worker.ts`; a run stores the solutions it found.
+- A link to a result holds the job, effort and candidate, and the page searches again to show it.
+  Raise `ENGINE` in `src/optimiser.ts` with any change to the solutions a job and effort give.
 - Icons are drawn in `src/Icon.tsx`. Add a new one there rather than as an SVG or a text symbol.
 - Each typeface has one job. `--heading` names a section or a thing ("Parts", "Sheet 1"); `--mono`
   sets everything read as data or operated, figures and buttons included; `--title` is the page's

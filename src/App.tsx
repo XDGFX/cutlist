@@ -11,6 +11,7 @@ import {
 import { clip, countLabel, dims, eachHolds, fit, labelRoom, mm, partLabel, planLabels, type Detail } from './labels'
 import {
   EFFORTS,
+  ENGINE,
   optimise,
   type Cut,
   type Job,
@@ -28,14 +29,15 @@ import { arrowTo, asksToCalculate, enterTo, neighbour, stepTo } from './keys'
 import type { SearchRequest, Update } from './search.worker'
 import {
   FILLS,
-  jobFromHash,
   jobToHash,
+  linkFromHash,
   load,
   MAX_RUNS,
   newId,
   sampleJob,
   save,
   type PartFill,
+  type Result,
   type Run,
   type Saved,
   type Theme,
@@ -195,15 +197,21 @@ function solve(run: Run): Solution[] {
   return solved.get(run.id)!
 }
 
-function initial(): Saved {
+/** The saved page, with any job it was opened by a link to, and the result to calculate if the link was to one. */
+function initial(): { saved: Saved; result?: Result } {
   const saved = load()
   // A link to the job already open is a reload, not an incoming share.
-  const shared = location.hash === jobToHash(saved.job) ? null : jobFromHash(location.hash)
-  return shared ? { ...saved, job: shared, activeRun: null } : saved
+  const link = location.hash === jobToHash(saved.job) ? null : linkFromHash(location.hash)
+  if (!link) return { saved }
+  const effort = link.result?.effort ?? saved.effort
+  return { saved: { ...saved, job: link.job, activeRun: null, effort, working: false }, result: link.result }
 }
 
 export function App() {
-  const [state, setState] = useState(initial)
+  const [opened] = useState(initial)
+  const [state, setState] = useState(opened.saved)
+  /** Whether the job is still as a link from an earlier search opened it, so its candidates may not be the ones shared. */
+  const earlier = opened.result !== undefined && opened.result.engine !== ENGINE && state.job === opened.saved.job
   const [copied, setCopied] = useState(false)
   // How long the search that has just ended took, which the Calculate button shows for a moment.
   const [took, setTook] = useState<string | null>(null)
@@ -253,7 +261,13 @@ export function App() {
     }, URL_DELAY)
     return () => clearTimeout(timer)
   }, [job])
-  useEffect(() => () => worker.current?.terminate(), [])
+  useEffect(
+    () => () => {
+      worker.current?.terminate()
+      worker.current = null
+    },
+    [],
+  )
 
   const run = runs.find((r) => r.id === state.activeRun) ?? null
   const solutions = useMemo(() => (run ? solve(run) : []), [run?.id, run?.solutions])
@@ -345,7 +359,8 @@ export function App() {
     }))
   }, [job.stock.length, job.parts.length])
 
-  const calculate = () => {
+  /** Searches the job at the chosen effort, and shows candidate `pick` of what it finds, or the first. */
+  const calculate = (pick?: number) => {
     if (worker.current) return
     const searched = structuredClone(job)
     const started = performance.now()
@@ -375,13 +390,22 @@ export function App() {
         const latest = s.runs[0]
         // Repeating the latest run refreshes it rather than adding a duplicate to history.
         if (latest && latest.effort === effort && sameJob(latest.job, searched))
-          return { ...s, runs: [{ ...latest, ...result }, ...s.runs.slice(1)], activeRun: latest.id }
-        const next: Run = { id: newId(), job: searched, pick: 0, ...result }
+          return {
+            ...s,
+            runs: [{ ...latest, ...result, pick: pick ?? latest.pick }, ...s.runs.slice(1)],
+            activeRun: latest.id,
+          }
+        const next: Run = { id: newId(), job: searched, pick: pick ?? 0, ...result }
         return { ...s, runs: [next, ...s.runs].slice(0, MAX_RUNS), activeRun: next.id }
       })
     }
     w.postMessage({ type: 'start', job: searched, effort } satisfies SearchRequest)
   }
+
+  // A link to a result opens on that result, worked out again here, since a link holds only the inputs.
+  useEffect(() => {
+    if (opened.result) calculate(earlier ? undefined : opened.result.pick)
+  }, [])
 
   const stop = () => worker.current?.postMessage({ type: 'stop' } satisfies SearchRequest)
 
@@ -469,9 +493,15 @@ export function App() {
     })
   }
 
+  /** The result on show, if it is still the job's: what a link to it calculates and picks. */
+  const shown: Result | null = run && solution && !stale ? { effort: run.effort ?? 0, pick: chosen, engine: ENGINE } : null
+  // Links to the result on show, or to the job alone before one is calculated. The address bar
+  // stays a link to the job, so that a reload does not search again.
   const copyLink = async () => {
     history.replaceState(null, '', jobToHash(job))
-    await navigator.clipboard?.writeText(location.href).catch(() => {})
+    const link = new URL(location.href)
+    link.hash = jobToHash(job, shown ?? undefined)
+    await navigator.clipboard?.writeText(link.href).catch(() => {})
     setCopied(true)
     setStatus('Link copied')
     setTimeout(() => setCopied(false), 1500)
@@ -651,7 +681,7 @@ export function App() {
             <button
               id="calculate"
               className="primary"
-              onClick={calculate}
+              onClick={() => calculate()}
               aria-disabled={searching !== null}
               aria-keyshortcuts="Control+Enter Meta+Enter"
             >
@@ -764,7 +794,9 @@ export function App() {
         </details>
 
           <div className="row">
-            <button onClick={copyLink}>{copied ? 'Link copied' : 'Copy link to this job'}</button>
+            <button onClick={copyLink}>
+              {copied ? 'Link copied' : shown ? 'Copy link to this result' : 'Copy link to this job'}
+            </button>
             <button onClick={() => setJob(sampleJob())}>Load example</button>
           </div>
         </section>
@@ -802,10 +834,17 @@ export function App() {
         {run && stale && !working && (
           <p className="notice">
             The inputs have changed since this run.{' '}
-            <button data-search onClick={calculate}>
+            <button data-search onClick={() => calculate()}>
               Recalculate
             </button>{' '}
             <button onClick={() => setJob(structuredClone(run.job))}>Restore this run's inputs</button>
+          </p>
+        )}
+
+        {run && earlier && !working && (
+          <p className="notice">
+            This link was made with an earlier version of the optimiser, so these candidates may differ from the ones
+            shared.
           </p>
         )}
 

@@ -85,26 +85,49 @@ export function save(saved: Saved) {
   }
 }
 
-type Packed = { k: number; p: [string, number, number, number, 0 | 1][]; s: [string, number, number, number][] }
+/**
+ * What a link to a result adds to the job: the effort to calculate it at, the candidate to show, and
+ * the search that found it, which must be this page's `ENGINE` for the candidate to mean the same.
+ */
+export interface Result {
+  effort: number
+  pick: number
+  engine: number
+}
 
-export function jobToHash(job: Job): string {
+export interface Link {
+  job: Job
+  result?: Result
+}
+
+type Packed = {
+  k: number
+  p: [string, number, number, number, 0 | 1][]
+  s: [string, number, number, number][]
+  e?: number
+  c?: number
+  v?: number
+}
+
+export function jobToHash(job: Job, result?: Result): string {
   const packed: Packed = {
     k: job.kerf,
     p: job.parts.map((p) => [p.name, p.length, p.width, p.qty, p.canRotate ? 1 : 0]),
     s: job.stock.map((s) => [s.name, s.length, s.width, s.qty]),
+    ...(result && { e: result.effort, c: result.pick, v: result.engine }),
   }
   const bytes = new TextEncoder().encode(JSON.stringify(packed))
   const b64 = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''))
   return HASH + b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-export function jobFromHash(hash: string): Job | null {
+export function linkFromHash(hash: string): Link | null {
   if (!hash.startsWith(HASH)) return null
   try {
     const b64 = hash.slice(HASH.length).replace(/-/g, '+').replace(/_/g, '/')
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
     const packed = JSON.parse(new TextDecoder().decode(bytes)) as Packed
-    return {
+    const job: Job = {
       kerf: Number(packed.k) || 0,
       parts: packed.p.map(([name, length, width, qty, r]) => ({
         id: newId(),
@@ -122,6 +145,9 @@ export function jobFromHash(hash: string): Job | null {
         qty: Number(qty) || 0,
       })),
     }
+    if (packed.e === undefined) return { job }
+    const count = (n: unknown) => Math.max(0, Math.floor(Number(n)) || 0)
+    return { job, result: { effort: count(packed.e), pick: count(packed.c), engine: count(packed.v) } }
   } catch {
     return null
   }
