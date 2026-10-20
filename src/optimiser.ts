@@ -605,6 +605,15 @@ function consolidation(s: Solution): number {
   return sum(s.layouts, (l) => sum(l.offcuts, (r) => (r.w * r.h) ** 2))
 }
 
+/**
+ * The part area on the least-used sheet. Spare stock otherwise gives the search no way to tell a
+ * solution close to freeing a sheet from any other with the same sheet count, so half the elite is
+ * bred for it.
+ */
+function lightest(s: Solution): number {
+  return Math.min(...s.layouts.map((l) => sum(l.placements, (p) => p.w * p.h)))
+}
+
 /** Solutions that leave the same main offcut on each sheet are one option; the best of them is kept. */
 function mainOffcuts(s: Solution): string {
   return s.layouts
@@ -772,7 +781,12 @@ export function createSearch(job: Job, effort = 0): Search {
         else if (tried < randomUntil || rng() < FRESH) consider(randomPlan())
         else {
           if (eliteStale) {
-            elite = ranked().slice(0, ELITE)
+            const best = ranked().slice(0, ELITE / 2)
+            const emptiest = [...pool.values()]
+              .filter((e) => !best.includes(e))
+              .sort((a, b) => compareNeeds(a.solution, b.solution) || lightest(a.solution) - lightest(b.solution))
+              .slice(0, ELITE / 2)
+            elite = [...best, ...emptiest]
             eliteStale = false
           }
           consider(mutate(pick(elite).plan))

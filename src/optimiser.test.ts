@@ -290,6 +290,27 @@ describe('optimise', () => {
     })
   })
 
+  it('finds the fewest sheets however much spare stock there is', () => {
+    const dinette = (qty: number): Job => ({
+      kerf: 2,
+      stock: [sheet({ length: 2100, width: 1900, qty })],
+      parts: [
+        part({ id: 'side seat', length: 1170, width: 505, qty: 4 }),
+        part({ id: 'back seat', length: 1000, width: 538, qty: 4 }),
+        part({ id: 'side backrest', length: 1150, width: 410, qty: 4 }),
+        part({ id: 'rear backrest', length: 1930, width: 410, qty: 2 }),
+        part({ id: 'infill', length: 1170, width: 190, qty: 2 }),
+        part({ id: 'wide', length: 1900, width: 580, qty: 3 }),
+        part({ id: 'narrow', length: 1900, width: 250, qty: 6 }),
+      ],
+    })
+    const thorough = EFFORTS.findIndex((e) => e.name === 'Thorough')
+    for (const qty of [4, 20]) {
+      const [best] = optimise(dinette(qty), thorough)
+      expect([best.stats.sheets, best.stats.unplaced]).toEqual([4, 0])
+    }
+  })
+
   it('gives the same solutions every time for the same job', () => {
     expect(optimise(cabinet)).toEqual(optimise(cabinet))
   })
