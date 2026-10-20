@@ -966,6 +966,34 @@ main:has(.progress) {
   font-weight: 600;
 }
 
+/* Inverted, so a job that did not fit cannot be mistaken for one that did. */
+.notice.failed,
+.chosen .short {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.notice.failed {
+  padding: 0.5rem 0.75rem;
+}
+
+.chosen .short {
+  padding: 0 0.3em;
+}
+
+.uncut .part {
+  fill: url(#uncut);
+  stroke-dasharray: 6 4;
+}
+
+.uncut pattern line {
+  stroke: var(--ink);
+}
+
+.uncut svg {
+  cursor: auto;
+}
+
 .sheet {
   margin: 0 0 3rem;
   break-inside: avoid;
