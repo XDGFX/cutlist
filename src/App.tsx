@@ -209,7 +209,7 @@ function initial(): { saved: Saved; result?: Result } {
 export function App() {
   const [opened] = useState(initial)
   const [state, setState] = useState(opened.saved)
-  const [copied, setCopied] = useState<'job' | 'result' | null>(null)
+  const [copied, setCopied] = useState(false)
   // How long the search that has just ended took, which the Calculate button shows for a moment.
   const [took, setTook] = useState<string | null>(null)
   const tookTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -492,15 +492,16 @@ export function App() {
 
   /** The result on show, if it is still the job's: what a link to it calculates and picks. */
   const shown: Result | null = run && solution && !stale ? { effort: run.effort ?? 0, pick: chosen } : null
-  // The address bar stays a link to the job, so that a reload does not search again.
-  const copyLink = async (result?: Result) => {
+  // Links to the result on show, or to the job alone before one is calculated. The address bar
+  // stays a link to the job, so that a reload does not search again.
+  const copyLink = async () => {
     history.replaceState(null, '', jobToHash(job))
     const link = new URL(location.href)
-    link.hash = jobToHash(job, result)
+    link.hash = jobToHash(job, shown ?? undefined)
     await navigator.clipboard?.writeText(link.href).catch(() => {})
-    setCopied(result ? 'result' : 'job')
+    setCopied(true)
     setStatus('Link copied')
-    setTimeout(() => setCopied(null), 1500)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   return (
@@ -790,12 +791,9 @@ export function App() {
         </details>
 
           <div className="row">
-            <button onClick={() => copyLink()}>{copied === 'job' ? 'Link copied' : 'Copy link to this job'}</button>
-            {shown && (
-              <button onClick={() => copyLink(shown)}>
-                {copied === 'result' ? 'Link copied' : 'Copy link to this result'}
-              </button>
-            )}
+            <button onClick={copyLink}>
+              {copied ? 'Link copied' : shown ? 'Copy link to this result' : 'Copy link to this job'}
+            </button>
             <button onClick={() => setJob(sampleJob())}>Load example</button>
           </div>
         </section>
