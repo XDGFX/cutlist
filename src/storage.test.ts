@@ -13,9 +13,9 @@ describe('links', () => {
     expect(withoutIds(link.job.stock)).toEqual(withoutIds(job.stock))
   })
 
-  it('carry the effort and chosen candidate of a result', () => {
-    const link = linkFromHash(jobToHash(sampleJob(), { effort: 2, pick: 3 }))!
-    expect(link.result).toEqual({ effort: 2, pick: 3 })
+  it('carry the effort, chosen candidate and engine of a result', () => {
+    const link = linkFromHash(jobToHash(sampleJob(), { effort: 2, pick: 3, engine: 4 }))!
+    expect(link.result).toEqual({ effort: 2, pick: 3, engine: 4 })
   })
 
   it('are not read from another fragment', () => {

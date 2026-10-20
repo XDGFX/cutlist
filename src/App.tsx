@@ -11,6 +11,7 @@ import {
 import { clip, countLabel, dims, eachHolds, fit, labelRoom, mm, partLabel, planLabels, type Detail } from './labels'
 import {
   EFFORTS,
+  ENGINE,
   optimise,
   type Cut,
   type Job,
@@ -209,6 +210,8 @@ function initial(): { saved: Saved; result?: Result } {
 export function App() {
   const [opened] = useState(initial)
   const [state, setState] = useState(opened.saved)
+  /** Whether the job is still as a link from an earlier search opened it, so its candidates may not be the ones shared. */
+  const earlier = opened.result !== undefined && opened.result.engine !== ENGINE && state.job === opened.saved.job
   const [copied, setCopied] = useState(false)
   // How long the search that has just ended took, which the Calculate button shows for a moment.
   const [took, setTook] = useState<string | null>(null)
@@ -401,7 +404,7 @@ export function App() {
 
   // A link to a result opens on that result, worked out again here, since a link holds only the inputs.
   useEffect(() => {
-    if (opened.result) calculate(opened.result.pick)
+    if (opened.result) calculate(earlier ? undefined : opened.result.pick)
   }, [])
 
   const stop = () => worker.current?.postMessage({ type: 'stop' } satisfies SearchRequest)
@@ -491,7 +494,7 @@ export function App() {
   }
 
   /** The result on show, if it is still the job's: what a link to it calculates and picks. */
-  const shown: Result | null = run && solution && !stale ? { effort: run.effort ?? 0, pick: chosen } : null
+  const shown: Result | null = run && solution && !stale ? { effort: run.effort ?? 0, pick: chosen, engine: ENGINE } : null
   // Links to the result on show, or to the job alone before one is calculated. The address bar
   // stays a link to the job, so that a reload does not search again.
   const copyLink = async () => {
@@ -835,6 +838,13 @@ export function App() {
               Recalculate
             </button>{' '}
             <button onClick={() => setJob(structuredClone(run.job))}>Restore this run's inputs</button>
+          </p>
+        )}
+
+        {run && earlier && !working && (
+          <p className="notice">
+            This link was made with an earlier version of the optimiser, so these candidates may differ from the ones
+            shared.
           </p>
         )}
 

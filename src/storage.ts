@@ -85,10 +85,14 @@ export function save(saved: Saved) {
   }
 }
 
-/** What a link to a result adds to the job: the effort to calculate it at and the candidate to show. */
+/**
+ * What a link to a result adds to the job: the effort to calculate it at, the candidate to show, and
+ * the search that found it, which must be this page's `ENGINE` for the candidate to mean the same.
+ */
 export interface Result {
   effort: number
   pick: number
+  engine: number
 }
 
 export interface Link {
@@ -102,6 +106,7 @@ type Packed = {
   s: [string, number, number, number][]
   e?: number
   c?: number
+  v?: number
 }
 
 export function jobToHash(job: Job, result?: Result): string {
@@ -109,7 +114,7 @@ export function jobToHash(job: Job, result?: Result): string {
     k: job.kerf,
     p: job.parts.map((p) => [p.name, p.length, p.width, p.qty, p.canRotate ? 1 : 0]),
     s: job.stock.map((s) => [s.name, s.length, s.width, s.qty]),
-    ...(result && { e: result.effort, c: result.pick }),
+    ...(result && { e: result.effort, c: result.pick, v: result.engine }),
   }
   const bytes = new TextEncoder().encode(JSON.stringify(packed))
   const b64 = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''))
@@ -141,7 +146,8 @@ export function linkFromHash(hash: string): Link | null {
       })),
     }
     if (packed.e === undefined) return { job }
-    return { job, result: { effort: Math.max(0, Math.floor(Number(packed.e)) || 0), pick: Math.max(0, Math.floor(Number(packed.c)) || 0) } }
+    const count = (n: unknown) => Math.max(0, Math.floor(Number(n)) || 0)
+    return { job, result: { effort: count(packed.e), pick: count(packed.c), engine: count(packed.v) } }
   } catch {
     return null
   }
