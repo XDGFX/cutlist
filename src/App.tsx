@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from 'react'
 import { clip, countLabel, dims, eachHolds, fit, labelRoom, mm, partLabel, planLabels, type Detail } from './labels'
 import {
@@ -22,6 +23,7 @@ import {
   type SearchStats,
   type Solution,
   type StockSheet,
+  type Unplaced,
 } from './optimiser'
 import { flourishPage } from './flourish'
 import { Icon } from './Icon'
@@ -893,7 +895,14 @@ export function App() {
                   </button>
                 )}
               </div>
-              <span>{figures(solution)}</span>
+              <span>
+                {figures(solution)}
+                {solution.stats.unplaced > 0 && (
+                  <>
+                    , <span className="short">{solution.stats.unplaced} short</span>
+                  </>
+                )}
+              </span>
               <span className="work-tools">
                 {moves(solution)}
                 {workSwitch}
@@ -909,8 +918,8 @@ export function App() {
             )}
 
             {solution.unplaced.length > 0 && (
-              <p className="notice warn">
-                Not enough stock for: {short(solution)}.
+              <p className="notice warn failed">
+                <Icon name="warn" /> Not enough stock for: {short(solution)}.
               </p>
             )}
 
@@ -928,6 +937,14 @@ export function App() {
                 onDone={(j) => markDone(i, j)}
               />
             ))}
+            {solution.unplaced.length > 0 && !working && (
+              <Uncut
+                unplaced={solution.unplaced}
+                parts={run.job.parts}
+                across={Math.max(...(solution.layouts.length ? solution.layouts : run.job.stock).map((s) => s.length))}
+                named={showNames}
+              />
+            )}
             {run.search && !working && (
               <p className="summary">
                 Tried {count(run.search.tried)} layouts in {duration(run.search.ms)} at {EFFORTS[run.effort ?? 0].name}{' '}
@@ -1210,6 +1227,81 @@ function Band({
   )
 }
 
+/** Drawing millimetres per screen pixel, so that text on a drawing is sized in pixels however large it is drawn. */
+function useMillimetresPerPixel(svg: RefObject<SVGSVGElement | null>, length: number) {
+  const [px, setPx] = useState(length / 900)
+  const measure = () => {
+    const box = svg.current?.getBoundingClientRect()
+    const view = svg.current?.viewBox.baseVal
+    if (!box?.width || !box.height || !view) return
+    const next = Math.max(view.width / box.width, view.height / box.height)
+    setPx((was) => (Math.abs(next - was) / was > 0.005 ? next : was))
+  }
+  useLayoutEffect(measure)
+  useEffect(() => {
+    const watch = new ResizeObserver(measure)
+    watch.observe(svg.current!)
+    return () => watch.disconnect()
+  }, [])
+  return px
+}
+
+/** The parts no sheet had room for, hatched and drawn to the scale of the sheets above. */
+function Uncut({ unplaced, parts, across, named }: { unplaced: Unplaced[]; parts: Part[]; across: number; named: boolean }) {
+  const svg = useRef<SVGSVGElement>(null)
+  const sized = unplaced.flatMap((u) => {
+    const part = parts.find((p) => p.id === u.partId)
+    return part ? [{ ...u, w: part.length, h: part.width }] : []
+  })
+  const length = Math.max(across, ...sized.map((u) => u.w))
+  const px = useMillimetresPerPixel(svg, length)
+  const font = HEADING * px
+  const gap = length / 50
+  // Laid in rows left to right, a new row whenever the next part would run past the sheets' edge.
+  let [x, y, row] = [0, 0, 0]
+  const drawn = sized.map((u) => {
+    if (x > 0 && x + u.w > length) [x, y, row] = [0, y + row + gap, 0]
+    const at = { ...u, x, y }
+    x += u.w + gap
+    row = Math.max(row, u.h)
+    return at
+  })
+  const height = y + row
+  const qty = total(unplaced)
+  const hatch = PATTERN * px
+  return (
+    <figure className="sheet uncut">
+      <figcaption className="bar">
+        <h3>Not cut</h3>
+        <span />
+        <span>
+          {qty} {qty === 1 ? 'part' : 'parts'}
+        </span>
+      </figcaption>
+      <svg ref={svg} viewBox={`0 0 ${length} ${height}`} role="img" aria-label="Parts not cut">
+        <defs>
+          <pattern id="uncut" patternUnits="userSpaceOnUse" width={hatch / 60} height={hatch / 60} patternTransform="rotate(45)">
+            <line x1={0} y1={hatch / 120} x2={hatch / 60} y2={hatch / 120} strokeWidth={hatch / 900} />
+          </pattern>
+        </defs>
+        {drawn.map((u) => {
+          const wanted = u.qty > 1 ? countLabel(u.qty, u, named) : partLabel(u, named)
+          const setting = fit(wanted, u, font)
+          return (
+            <g key={u.partId}>
+              <title>{wanted.join(': ')}</title>
+              <rect className="part" x={u.x} y={u.y} width={u.w} height={u.h} />
+              {setting && (
+                <Label {...setting} x={u.x + u.w / 2} y={u.y + u.h / 2} font={font} className="part-label" plate />
+              )}
+            </g>
+          )
+        })}
+      </svg>
+    </figure>
+  )
+}
+
 function Sheet({
   layout,
   index,
@@ -1233,22 +1325,7 @@ function Sheet({
   onDone: (placement: number) => void
 }) {
   const svg = useRef<SVGSVGElement>(null)
-  // Sheet millimetres per screen pixel, so that text on a sheet is sized in pixels however large
-  // the sheet is drawn.
-  const [px, setPx] = useState(layout.length / 900)
-  const measure = () => {
-    const box = svg.current?.getBoundingClientRect()
-    const view = svg.current?.viewBox.baseVal
-    if (!box?.width || !box.height || !view) return
-    const next = Math.max(view.width / box.width, view.height / box.height)
-    setPx((was) => (Math.abs(next - was) / was > 0.005 ? next : was))
-  }
-  useLayoutEffect(measure)
-  useEffect(() => {
-    const watch = new ResizeObserver(measure)
-    watch.observe(svg.current!)
-    return () => watch.disconnect()
-  }, [])
+  const px = useMillimetresPerPixel(svg, layout.length)
   // The cut whose fence distance shows on screen; print shows them all.
   const [hot, setHot] = useState<number | null>(null)
   const heat = (i: number) => ({
